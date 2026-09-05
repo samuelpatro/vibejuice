@@ -44,6 +44,11 @@ struct PopoverView: View {
         HStack(spacing: 8) {
             Text(store.lastRefresh.map { "Updated \(Relative.text(from: $0))" } ?? "Loading…")
                 .font(.caption).foregroundStyle(.secondary)
+            if let u = store.update {
+                Pill(text: "\(u.version) is out")
+                    .onTapGesture { NSWorkspace.shared.open(u.url) }
+                    .help("Opens the release page. Homebrew users: brew upgrade --cask vibejuice")
+            }
             Spacer(minLength: 8)
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
@@ -54,6 +59,8 @@ struct PopoverView: View {
                         .help("Refresh")
                     Menu {
                         Toggle("Auto-switch when limit is hit", isOn: $store.autoSwitch)
+                        Toggle("Percent in menu bar", isOn: $store.showPercent)
+                        Toggle("Launch at login", isOn: Binding(get: { store.launchAtLogin }, set: { store.setLaunchAtLogin($0) }))
                         Divider()
                         Button("Rescan logins") { store.reload() }
                         Divider()

@@ -46,9 +46,14 @@ struct MenuBarLabel: View {
     @ObservedObject var store: Store
 
     var body: some View {
-        let levels = Provider.allCases.compactMap { store.activeAccount(for: $0)?.headroom }
-        Image(nsImage: MenuBarIcon.image(level: levels.min().map { $0 / 100 },
-                                         bolt: store.accounts.contains { $0.tokenMax != nil }))
+        let lowest = Provider.allCases.compactMap { store.activeAccount(for: $0)?.headroom }.min()
+        HStack(spacing: 4) {
+            Image(nsImage: MenuBarIcon.image(level: lowest.map { $0 / 100 },
+                                             bolt: store.accounts.contains { $0.tokenMax != nil }))
+            if store.showPercent, let lowest {
+                Text("\(Int(lowest.rounded()))%")
+            }
+        }
     }
 }
 

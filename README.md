@@ -41,7 +41,7 @@ scripts/make-signing-cert.sh   # once: self-signed identity so Keychain permissi
 scripts/bundle.sh              # builds build/VibeJuice.app and opens it
 ```
 
-The app sits in the menu bar as a small glass. Its fill level is the headroom of your active accounts, and a bolt joins it when a weekly window with unused quota is about to reset. Add it to System Settings > General > Login Items to start it at login.
+The app sits in the menu bar as a small glass. Its fill level is the headroom of your active accounts, and a bolt joins it when a weekly window with unused quota is about to reset. The … menu has toggles for launch at login and for showing the percent next to the glass. When a newer release is out, the footer shows it with a link.
 
 ## Release
 
@@ -60,7 +60,7 @@ The account currently signed in to each CLI is picked up automatically. To add a
 
 Click a row to switch. Sessions already running keep their old account, so VibeJuice offers to restart them: each one is closed and reopened with its resume command, in the folder and the terminal it was running in (cmux, Ghostty, iTerm or Terminal). Right-click a row to refresh it, spend a Codex manual reset, or forget it.
 
-**Auto-switch** (in the … menu) moves to the account with the most headroom as soon as the active one hits a limit, and posts a notification.
+**Auto-switch** (in the … menu) moves to the account with the most headroom as soon as the active one hits a limit, and posts a notification. Independently of that, one notification goes out when an active account drops under 10% on any window.
 
 ## What the numbers mean
 

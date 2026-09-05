@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ServiceManagement
 import UserNotifications
 
 @MainActor
@@ -13,8 +14,17 @@ final class Store: ObservableObject {
     @Published var autoSwitch: Bool = UserDefaults.standard.bool(forKey: "autoSwitch") {
         didSet { UserDefaults.standard.set(autoSwitch, forKey: "autoSwitch"); if autoSwitch { autoSwitchIfNeeded() } }
     }
+    /// Shows the smallest active headroom as text next to the menu bar glass.
+    @Published var showPercent: Bool = UserDefaults.standard.bool(forKey: "showPercent") {
+        didSet { UserDefaults.standard.set(showPercent, forKey: "showPercent") }
+    }
+    /// Newer GitHub release than the running build, if any.
+    @Published var update: Update?
+
+    struct Update { let version: String; let url: URL }
 
     private var timer: Timer?
+    private var updateTimer: Timer?
     private var noticeTask: Task<Void, Never>?
 
     init() {
@@ -22,6 +32,51 @@ final class Store: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
+        Task { await checkForUpdate() }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.checkForUpdate() }
+        }
+    }
+
+    // MARK: Launch at login
+
+    var launchAtLogin: Bool { SMAppService.mainApp.status == .enabled }
+
+    func setLaunchAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+        } catch {
+            Log.line("login item: \(error)")
+            show("Could not change the login item: \(error.localizedDescription)")
+        }
+        objectWillChange.send()
+    }
+
+    // MARK: Updates
+
+    /// Compares the latest GitHub release with the running version. Dev builds without a
+    /// numeric version skip the check.
+    func checkForUpdate() async {
+        guard let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+              current.first?.isNumber == true else { return }
+        var req = URLRequest(url: URL(string: "https://api.github.com/repos/samuelpatro/vibejuice/releases/latest")!)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tag = json["tag_name"] as? String,
+              let page = (json["html_url"] as? String).flatMap(URL.init) else { return }
+        let latest = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+        update = Store.isNewer(latest, than: current) ? Update(version: latest, url: page) : nil
+        Log.line("update check current=\(current) latest=\(latest)")
+    }
+
+    static func isNewer(_ a: String, than b: String) -> Bool {
+        let x = a.split(separator: ".").map { Int($0) ?? 0 }, y = b.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(x.count, y.count) {
+            let l = i < x.count ? x[i] : 0, r = i < y.count ? y[i] : 0
+            if l != r { return l > r }
+        }
+        return false
     }
 
     func accounts(for provider: Provider) -> [Account] {
@@ -79,6 +134,24 @@ final class Store: ObservableObject {
         lastRefresh = Date()
         if autoSwitch { autoSwitchIfNeeded() }
         notifyTokenMax()
+        notifyLowQuota()
+    }
+
+    /// One notification per active account per window when its headroom drops under 10%.
+    /// Spent accounts are left to auto-switch, which has its own notification.
+    private func notifyLowQuota() {
+        let key = "lowQuotaNotified"
+        var seen = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        for a in accounts where a.isActive && !a.spent {
+            guard let w = a.status.windows.filter({ $0.leftPercent <= 10 }).min(by: { $0.leftPercent < $1.leftPercent }) else { continue }
+            let id = "\(a.id)|\(w.id)|\(Int(w.resetsAt?.timeIntervalSince1970 ?? 0))"
+            guard !seen.contains(id) else { continue }
+            seen.insert(id)
+            let reset = w.resetsAt.map { ", resets \(Relative.text(to: $0))" } ?? ""
+            Notifier.post(title: "\(a.provider.tool) is running low",
+                          body: "\(a.displayName): \(Int(w.leftPercent.rounded()))% left on \(w.label)\(reset). Switch accounts to keep going.")
+        }
+        UserDefaults.standard.set(Array(seen).suffix(200), forKey: key)
     }
 
     /// One notification per account per reset window when the tokenmax nudge appears.
