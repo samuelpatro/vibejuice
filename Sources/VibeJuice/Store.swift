@@ -240,7 +240,13 @@ final class Store: ObservableObject {
     /// Running CLI processes for a provider with their working directories (via lsof).
     func runningSessionList(_ provider: Provider) -> [RunningSession] {
         let pids = shell("/usr/bin/pgrep", ["-x", provider.binary]).split(separator: "\n").compactMap { Int32($0) }
-        return pids.map { pid in
+        // The CLIs spawn helper processes with the same name; keep only the top-level ones.
+        let pidSet = Set(pids)
+        let tops = pids.filter { pid in
+            let ppid = Int32(shell("/bin/ps", ["-o", "ppid=", "-p", "\(pid)"]).trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            return !pidSet.contains(ppid)
+        }
+        return tops.map { pid in
             let out = shell("/usr/sbin/lsof", ["-a", "-p", "\(pid)", "-d", "cwd", "-Fn"])
             let cwd = out.split(separator: "\n").first { $0.hasPrefix("n") }.map { String($0.dropFirst()) } ?? NSHomeDirectory()
             return RunningSession(pid: pid, cwd: cwd)
