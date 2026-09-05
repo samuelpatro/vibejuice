@@ -16,6 +16,16 @@ No proxy. Nothing sits between the CLI and the API. Each login is kept in the ap
 
 Requires macOS 26 or newer, Xcode 26, and at least one of Claude Code, Codex CLI or Grok CLI already signed in.
 
+**Homebrew**, builds from source on your Mac so it opens without Gatekeeper warnings:
+
+```sh
+brew install samuelpatro/vibejuice/vibejuice
+cp -R "$(brew --prefix vibejuice)/VibeJuice.app" /Applications/
+open /Applications/VibeJuice.app
+```
+
+**From a checkout:**
+
 ```sh
 git clone https://github.com/samuelpatro/vibejuice.git
 cd vibejuice
@@ -24,9 +34,9 @@ scripts/bundle.sh              # builds build/VibeJuice.app and opens it
 cp -R build/VibeJuice.app /Applications/
 ```
 
-The app appears as a drop icon in the menu bar with one colored dot per provider. To keep it around, add it to System Settings > General > Login Items.
+The app appears as a drop icon in the menu bar with one colored dot per provider. Add it to System Settings > General > Login Items to start it at login.
 
-There are no prebuilt downloads yet. An unsigned build downloaded from the internet is blocked by Gatekeeper on macOS 26, so until the app is notarized, building it yourself is the way in. `scripts/bundle.sh --no-open` builds without launching, `swift run` runs it straight from the package during development.
+There are no prebuilt downloads. macOS 26 blocks unsigned apps that arrive over the network, and the app is not notarized yet, so it is compiled where it runs. `scripts/bundle.sh --no-open` builds without launching, `swift run` runs it straight from the package during development.
 
 ## Accounts
 
