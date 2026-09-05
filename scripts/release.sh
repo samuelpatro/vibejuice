@@ -2,8 +2,7 @@
 # Cut a release: build, sign ad hoc, wrap in a DMG, publish to GitHub Releases, update the cask.
 #   scripts/release.sh 0.1.0
 #
-# The DMG is published on the public tap repo (samuelpatro/homebrew-vibejuice) so `brew install` can
-# fetch it while the source repo stays private. The same release is mirrored on the source repo.
+# The DMG lives on the source repo's GitHub Release; the tap repo holds only the cask formula.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -33,7 +32,7 @@ cask "vibejuice" do
   version "$VERSION"
   sha256 "$SHA"
 
-  url "https://github.com/$TAP_REPO/releases/download/v#{version}/VibeJuice-#{version}.dmg"
+  url "https://github.com/$SOURCE_REPO/releases/download/v#{version}/VibeJuice-#{version}.dmg"
   name "VibeJuice"
   desc "One-click account switcher for Claude Code, Codex CLI and Grok CLI"
   homepage "https://github.com/$SOURCE_REPO"
@@ -61,7 +60,7 @@ gh release create "$TAG" "$DMG" --repo "$SOURCE_REPO" --title "VibeJuice $VERSIO
   || gh release upload "$TAG" "$DMG" --repo "$SOURCE_REPO" --clobber >/dev/null
 echo "released https://github.com/$SOURCE_REPO/releases/tag/$TAG"
 
-# Public tap: cask + the DMG brew downloads.
+# Public tap: formula only.
 if gh repo view "$TAP_REPO" >/dev/null 2>&1; then
   TAPDIR="$(mktemp -d)"
   gh repo clone "$TAP_REPO" "$TAPDIR" -- -q
@@ -70,8 +69,6 @@ if gh repo view "$TAP_REPO" >/dev/null 2>&1; then
   git -C "$TAPDIR" add Casks/vibejuice.rb
   git -C "$TAPDIR" diff --cached --quiet || git -C "$TAPDIR" commit -q -m "vibejuice $VERSION"
   git -C "$TAPDIR" push -q
-  gh release create "$TAG" "$DMG" --repo "$TAP_REPO" --title "VibeJuice $VERSION" --notes "$NOTES" >/dev/null 2>&1 \
-    || gh release upload "$TAG" "$DMG" --repo "$TAP_REPO" --clobber >/dev/null
   rm -rf "$TAPDIR"
   echo "tap updated: brew install --cask samuelpatro/vibejuice/vibejuice"
 else

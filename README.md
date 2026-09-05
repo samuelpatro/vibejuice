@@ -24,7 +24,7 @@ brew install --cask samuelpatro/vibejuice/vibejuice
 
 **Download**
 
-Grab `VibeJuice-<version>.dmg` from [Releases](https://github.com/samuelpatro/homebrew-vibejuice/releases), open it, drag VibeJuice to Applications. The build is not notarized, so the first launch needs right-click > Open. Homebrew handles that for you.
+Grab `VibeJuice-<version>.dmg` from [Releases](https://github.com/samuelpatro/vibejuice/releases), open it, drag VibeJuice to Applications. The build is not notarized, so the first launch needs right-click > Open. Homebrew handles that for you.
 
 **From source** (needs Xcode 26)
 
