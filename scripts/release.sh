@@ -29,12 +29,17 @@ SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 echo "built $DMG ($SHA)"
 
 # GitHub Release on the source repo: create it, or replace the asset if the tag already has one.
-NOTES="Install: brew install --cask samuelpatro/tap/vibejuice. Manual: open the DMG, drag VibeJuice to Applications, then run: xattr -dr com.apple.quarantine /Applications/VibeJuice.app"
+# Notes are the commit subjects since the previous tag (the workflow checks out full history).
+PREV="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
+NOTES_FILE="$(mktemp)"
+git log --no-merges --format='- %s' ${PREV:+"$PREV.."}"$TAG" > "$NOTES_FILE"
+[[ -n "$PREV" ]] && printf '\nFull changelog: https://github.com/%s/compare/%s...%s\n' "$SOURCE_REPO" "$PREV" "$TAG" >> "$NOTES_FILE"
 if gh release view "$TAG" --repo "$SOURCE_REPO" >/dev/null 2>&1; then
   gh release upload "$TAG" "$DMG" --repo "$SOURCE_REPO" --clobber >/dev/null
 else
-  gh release create "$TAG" "$DMG" --repo "$SOURCE_REPO" --title "VibeJuice $VERSION" --notes "$NOTES" --generate-notes >/dev/null
+  gh release create "$TAG" "$DMG" --repo "$SOURCE_REPO" --title "VibeJuice $VERSION" --notes-file "$NOTES_FILE" >/dev/null
 fi
+rm -f "$NOTES_FILE"
 echo "released https://github.com/$SOURCE_REPO/releases/tag/$TAG"
 
 # Cask in the tap repo, pointing at the release above.
