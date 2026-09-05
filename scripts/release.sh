@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Cut a release: build, sign ad hoc, wrap in a DMG, publish to GitHub Releases, update the cask.
-#   scripts/release.sh 0.1.0
+# Build, package and publish one version. GitHub Actions runs this on every `v*` tag
+# (.github/workflows/release.yml). It also works locally: scripts/release.sh 0.3.0
 #
-# The DMG lives on the source repo's GitHub Release; the tap repo holds only the cask formula.
+# Needs: gh authenticated for the source repo (GH_TOKEN in CI), and TAP_TOKEN or push rights
+# for the tap repo. Without tap access the release is still published; only the cask is skipped.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -12,9 +13,9 @@ SOURCE_REPO="samuelpatro/vibejuice"
 TAP_REPO="samuelpatro/homebrew-vibejuice"
 DMG="build/VibeJuice-$VERSION.dmg"
 
-# Ad hoc signature for distribution: no Keychain dialog, and a self-signed cert would not help
-# Gatekeeper anyway. Users right-click > Open once, or install through the cask.
+# Ad hoc signature: users right-click > Open once, or install through the cask.
 VERSION="$VERSION" CODESIGN_ID="__adhoc__" scripts/bundle.sh --no-open >/dev/null
+
 # DMG with the app and an Applications shortcut, the usual drag-to-install layout.
 STAGE="$(mktemp -d)"
 cp -R build/VibeJuice.app "$STAGE/"
@@ -25,9 +26,24 @@ rm -rf "$STAGE"
 SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 echo "built $DMG ($SHA)"
 
-# Cask formula in this repo; the tap repo gets a copy.
-mkdir -p Casks
-cat > Casks/vibejuice.rb <<RUBY
+# GitHub Release on the source repo: create it, or replace the asset if the tag already has one.
+NOTES="Open the DMG, drag VibeJuice to Applications, right-click > Open the first time. Or: brew install --cask samuelpatro/vibejuice/vibejuice"
+if gh release view "$TAG" --repo "$SOURCE_REPO" >/dev/null 2>&1; then
+  gh release upload "$TAG" "$DMG" --repo "$SOURCE_REPO" --clobber >/dev/null
+else
+  gh release create "$TAG" "$DMG" --repo "$SOURCE_REPO" --title "VibeJuice $VERSION" --notes "$NOTES" --generate-notes >/dev/null
+fi
+echo "released https://github.com/$SOURCE_REPO/releases/tag/$TAG"
+
+# Cask in the tap repo, pointing at the release above.
+TAP_URL="https://github.com/$TAP_REPO.git"
+[[ -n "${TAP_TOKEN:-}" ]] && TAP_URL="https://x-access-token:${TAP_TOKEN}@github.com/$TAP_REPO.git"
+TAPDIR="$(mktemp -d)"
+if ! git clone -q "$TAP_URL" "$TAPDIR" 2>/dev/null; then
+  echo "tap: cannot clone $TAP_REPO, skipping cask update"; exit 0
+fi
+mkdir -p "$TAPDIR/Casks"
+cat > "$TAPDIR/Casks/vibejuice.rb" <<RUBY
 cask "vibejuice" do
   version "$VERSION"
   sha256 "$SHA"
@@ -48,29 +64,13 @@ cask "vibejuice" do
   ]
 end
 RUBY
-
-git add Casks/vibejuice.rb scripts/bundle.sh
-git diff --cached --quiet || git commit -q -m "release: $VERSION"
-git tag -f "$TAG" >/dev/null
-git push -q origin main
-git push -q -f origin "$TAG"
-
-NOTES="VibeJuice $VERSION. Open the DMG, drag VibeJuice to Applications, right-click > Open the first time. Or: brew install --cask samuelpatro/vibejuice/vibejuice"
-gh release create "$TAG" "$DMG" --repo "$SOURCE_REPO" --title "VibeJuice $VERSION" --notes "$NOTES" >/dev/null 2>&1 \
-  || gh release upload "$TAG" "$DMG" --repo "$SOURCE_REPO" --clobber >/dev/null
-echo "released https://github.com/$SOURCE_REPO/releases/tag/$TAG"
-
-# Public tap: formula only.
-if gh repo view "$TAP_REPO" >/dev/null 2>&1; then
-  TAPDIR="$(mktemp -d)"
-  gh repo clone "$TAP_REPO" "$TAPDIR" -- -q
-  mkdir -p "$TAPDIR/Casks"
-  cp Casks/vibejuice.rb "$TAPDIR/Casks/vibejuice.rb"
-  git -C "$TAPDIR" add Casks/vibejuice.rb
-  git -C "$TAPDIR" diff --cached --quiet || git -C "$TAPDIR" commit -q -m "vibejuice $VERSION"
-  git -C "$TAPDIR" push -q
-  rm -rf "$TAPDIR"
+git -C "$TAPDIR" add Casks/vibejuice.rb
+if git -C "$TAPDIR" diff --cached --quiet; then
+  echo "tap: cask already at $VERSION"
+elif git -C "$TAPDIR" -c user.name="vibejuice-release" -c user.email="release@vibejuice.invalid" commit -q -m "vibejuice $VERSION" \
+     && git -C "$TAPDIR" push -q 2>/dev/null; then
   echo "tap updated: brew install --cask samuelpatro/vibejuice/vibejuice"
 else
-  echo "tap repo $TAP_REPO not found; create it (public) and rerun to enable brew install"
+  echo "tap: push failed (no TAP_TOKEN?), cask not updated"
 fi
+rm -rf "$TAPDIR"
