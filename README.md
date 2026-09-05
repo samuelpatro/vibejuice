@@ -23,7 +23,7 @@ brew install --cask vibejuice
 
 **Download**
 
-Grab `VibeJuice-<version>.zip` from [Releases](https://github.com/samuelpatro/homebrew-tap/releases), unzip, drag `VibeJuice.app` to Applications. The build is not notarized, so the first launch needs right-click > Open. Homebrew handles that for you.
+Grab `VibeJuice-<version>.dmg` from [Releases](https://github.com/samuelpatro/homebrew-tap/releases), open it, drag VibeJuice to Applications. The build is not notarized, so the first launch needs right-click > Open. Homebrew handles that for you.
 
 **From source** (needs Xcode 26)
 
@@ -36,7 +36,7 @@ scripts/bundle.sh              # builds build/VibeJuice.app and opens it
 
 The app appears as a drop icon in the menu bar with one colored dot per provider. To keep it around, add it to System Settings > General > Login Items.
 
-`scripts/bundle.sh --no-open` builds without launching. `swift run` runs it straight from the package during development. `scripts/release.sh <version>` builds, zips, publishes a GitHub release and updates the cask.
+`scripts/bundle.sh --no-open` builds without launching. `swift run` runs it straight from the package during development. `scripts/release.sh <version>` builds a DMG, publishes a GitHub release and updates the cask.
 
 ## Accounts
 
