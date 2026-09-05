@@ -44,6 +44,8 @@ final class Store: ObservableObject {
         else { Log.line("claude main: none") }
         if let main = CodexMain.read() { Vault.save(.codex, email: main.email, payload: main.payload); activeEmail[.codex] = main.email.lowercased() }
         else { Log.line("codex main: none") }
+        if let main = GrokMain.read() { Vault.save(.grok, email: main.email, payload: main.payload); activeEmail[.grok] = main.email.lowercased() }
+        else { Log.line("grok main: none") }
 
         var next: [Account] = []
         for (provider, email, payload) in Vault.list() {
@@ -54,6 +56,7 @@ final class Store: ObservableObject {
                 switch provider {
                 case .claude: a.plan = ClaudeCredentials(payload: payload)?.planLabel
                 case .codex: a.plan = CodexCredentials(payload: payload)?.planLabel
+                case .grok: a.plan = nil
                 }
             }
             if provider == .codex { a.renewsAt = CodexCredentials(payload: payload)?.renewsAt }
@@ -87,6 +90,11 @@ final class Store: ObservableObject {
         case .codex:
             guard let creds = CodexCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
             do { result = .success(try await UsageClient.codex(creds)) } catch { result = .failure(error) }
+        case .grok:
+            // No known usage endpoint yet (see issue #1): show the account, report expiry only.
+            guard let creds = GrokCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
+            update(id) { $0.status = (creds.expiresAt.map { $0 < Date() } ?? false) ? .expired : .noData; $0.updatedAt = Date() }
+            return
         }
         update(id) { a in
             switch result {
@@ -116,13 +124,17 @@ final class Store: ObservableObject {
     func activate(_ account: Account) {
         guard !account.isActive else { return }
         // Save the live state of the account we're leaving; the CLI may have refreshed its token.
-        if let main = account.provider == .claude ? ClaudeMain.read() : CodexMain.read() {
-            Vault.save(account.provider, email: main.email, payload: main.payload)
+        let live: MainLogin? = switch account.provider {
+            case .claude: ClaudeMain.read()
+            case .codex: CodexMain.read()
+            case .grok: GrokMain.read()
         }
+        if let main = live { Vault.save(account.provider, email: main.email, payload: main.payload) }
         do {
             switch account.provider {
             case .claude: try ClaudeMain.write(account.payload)
             case .codex: try CodexMain.write(account.payload)
+            case .grok: try GrokMain.write(account.payload)
             }
         } catch {
             show("Switch failed: \(error)")

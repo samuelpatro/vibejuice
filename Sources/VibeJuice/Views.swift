@@ -178,6 +178,9 @@ struct AccountRow: View {
             }
         case .loading:
             Text("Loading usage…").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+        case .noData:
+            Text("No usage data for \(account.provider.tool) yet. Switching works.")
+                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
         case .expired:
             Text(account.isActive
                  ? "Token expired. Start \(account.provider.tool) once and it refreshes."
@@ -201,6 +204,8 @@ struct AccountRow: View {
             .lineLimit(1).fixedSize()
         } else if case .expired = account.status {
             Text("Expired").font(.system(size: 11, weight: .medium)).foregroundStyle(.orange)
+        } else if case .noData = account.status, account.isActive {
+            Text("Active").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
         }
     }
 

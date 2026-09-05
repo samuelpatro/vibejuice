@@ -77,6 +77,27 @@ struct CodexCredentials {
     }
 }
 
+struct GrokCredentials {
+    let key: String
+    let email: String?
+    let name: String?
+    let expiresAt: Date?
+
+    /// payload = the full ~/.grok/auth.json: one entry per issuer, keyed by issuer::client id.
+    init?(payload: Data) {
+        guard let root = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let entry = root.values.compactMap({ $0 as? [String: Any] }).first(where: { ($0["key"] as? String)?.isEmpty == false }),
+              let key = entry["key"] as? String else { return nil }
+        self.key = key
+        email = entry["email"] as? String
+        name = entry["first_name"] as? String
+        if let s = entry["expires_at"] as? String {
+            let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            expiresAt = f.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+        } else { expiresAt = nil }
+    }
+}
+
 // MARK: - Main login slots (what the CLIs actually read)
 
 struct MainLogin {
@@ -156,6 +177,22 @@ enum CodexMain {
         guard let data = try? Data(contentsOf: dir.appendingPathComponent("auth.json")),
               let creds = CodexCredentials(payload: data), let email = creds.email else { return nil }
         return MainLogin(email: email, payload: data)
+    }
+}
+
+enum GrokMain {
+    static let authFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".grok/auth.json")
+
+    static func read() -> MainLogin? {
+        guard let data = try? Data(contentsOf: authFile),
+              let creds = GrokCredentials(payload: data), let email = creds.email else { return nil }
+        return MainLogin(email: email, payload: data)
+    }
+
+    static func write(_ payload: Data) throws {
+        guard GrokCredentials(payload: payload) != nil else { throw AuthError.badPayload }
+        try payload.write(to: authFile, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authFile.path)
     }
 }
 

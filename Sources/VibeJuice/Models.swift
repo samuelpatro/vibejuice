@@ -1,14 +1,22 @@
 import Foundation
 
 enum Provider: String, CaseIterable, Identifiable, Codable {
-    case claude, codex
+    case claude, codex, grok
 
     var id: String { rawValue }
-    var title: String { self == .claude ? "Claude" : "Codex" }
-    var tool: String { self == .claude ? "Claude Code" : "Codex CLI" }
+    var title: String {
+        switch self { case .claude: "Claude"; case .codex: "Codex"; case .grok: "Grok" }
+    }
+    var tool: String {
+        switch self { case .claude: "Claude Code"; case .codex: "Codex CLI"; case .grok: "Grok CLI" }
+    }
     var binary: String { rawValue }
     /// Interactive sign-in that replaces the main login, same as /login inside the CLI.
-    var loginCommand: String { self == .claude ? "claude auth login" : "codex login" }
+    var loginCommand: String {
+        switch self { case .claude: "claude auth login"; case .codex: "codex login"; case .grok: "grok login" }
+    }
+    /// Providers without a known usage endpoint show accounts and switching only.
+    var hasUsage: Bool { self != .grok }
 }
 
 struct QuotaWindow: Identifiable {
@@ -26,6 +34,7 @@ struct QuotaWindow: Identifiable {
 enum AccountStatus {
     case loading
     case ok([QuotaWindow])
+    case noData
     case expired
     case error(String)
 
