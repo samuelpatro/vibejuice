@@ -67,6 +67,8 @@ struct Account: Identifiable {
     static func id(_ provider: Provider, _ email: String) -> String { "\(provider.rawValue):\(email.lowercased())" }
     var id: String { Account.id(provider, email) }
     var displayName: String { email }
+    /// Row label: first 10 characters, then an ellipsis. Full name lives in the tooltip.
+    var shortName: String { email.count > 11 ? String(email.prefix(10)) + "…" : email }
 
     /// Smallest headroom across windows, 0 when any window is spent.
     var headroom: Double? {

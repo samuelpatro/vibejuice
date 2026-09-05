@@ -144,10 +144,11 @@ struct AccountRow: View {
                     if account.isActive { Circle().fill(Color.accentColor).padding(3) }
                 }
                 .frame(width: 12, height: 12)
-                Text(account.displayName)
+                Text(account.shortName)
                     .font(.body)
-                    .lineLimit(1).truncationMode(.middle)
-                    .layoutPriority(1)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .help(account.displayName)
                 if let plan = account.plan { Chip(text: plan) }
                 Spacer(minLength: 6)
                 trailing
