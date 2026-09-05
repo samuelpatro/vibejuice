@@ -5,9 +5,11 @@ struct PopoverView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 4) {
-                ForEach(Provider.allCases) { p in
-                    ProviderSection(provider: p)
+            GlassEffectContainer(spacing: 10) {
+                VStack(spacing: 4) {
+                    ForEach(Provider.allCases) { p in
+                        ProviderSection(provider: p)
+                    }
                 }
             }
             .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 4)
@@ -24,6 +26,9 @@ struct PopoverView: View {
             }
         }
         .frame(width: 440)
+        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .padding(8)
+        .containerBackground(.clear, for: .window)
         .animation(.easeOut(duration: 0.15), value: store.notice)
     }
 
@@ -152,13 +157,16 @@ struct AccountRow: View {
             }
             .padding(.leading, 20)
         }
-        .padding(.horizontal, 8).padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(account.isActive ? Color.accentColor.opacity(0.14) : hovering ? Color.primary.opacity(0.05) : .clear)
-        )
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .glassEffect(rowGlass, in: .rect(cornerRadius: 12))
         .onHover { hovering = $0 }
-        .opacity(account.spent ? 0.75 : 1)
+        .opacity(account.spent ? 0.8 : 1)
+    }
+
+    private var rowGlass: Glass {
+        if account.isActive { return .regular.tint(Color.accentColor.opacity(0.35)).interactive() }
+        if hovering { return .regular.interactive() }
+        return .clear
     }
 
     @ViewBuilder
