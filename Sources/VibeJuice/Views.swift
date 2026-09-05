@@ -22,17 +22,11 @@ struct PopoverView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if let r = store.pendingRestart {
-                        Button("Restart \(r.sessions.count == 1 ? "session" : "\(r.sessions.count) sessions")") {
-                            store.restartPendingSessions()
-                        }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.small)
-                        .fixedSize()
+                        Pill(text: "Restart \(r.sessions.count == 1 ? "session" : "\(r.sessions.count) sessions")", prominent: true)
+                            .onTapGesture { store.restartPendingSessions() }
                         .help("Quits the running \(r.provider.tool) session\(r.sessions.count == 1 ? "" : "s") and reopens each one in its folder with \(r.provider.resumeCommand), signed in as \(r.account).")
-                        Button("Later") { store.dismissRestart() }
-                            .buttonStyle(.glass)
-                            .controlSize(.small)
-                            .fixedSize()
+                        Pill(text: "Later")
+                            .onTapGesture { store.dismissRestart() }
                     }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
@@ -53,15 +47,11 @@ struct PopoverView: View {
             Spacer(minLength: 8)
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
-                    Button {
-                        store.reload()
-                    } label: {
-                        IconCircle(systemName: "arrow.clockwise")
-                            .rotationEffect(.degrees(store.refreshing ? 360 : 0))
-                            .animation(store.refreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: store.refreshing)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Refresh")
+                    IconCircle(systemName: "arrow.clockwise")
+                        .rotationEffect(.degrees(store.refreshing ? 360 : 0))
+                        .animation(store.refreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: store.refreshing)
+                        .onTapGesture { store.reload() }
+                        .help("Refresh")
                     Menu {
                         Toggle("Auto-switch when limit is hit", isOn: $store.autoSwitch)
                         Divider()
@@ -100,15 +90,10 @@ struct ProviderSection: View {
                 Spacer()
                 GlassEffectContainer(spacing: 6) {
                     HStack(spacing: 6) {
-                        Button { store.open(provider) } label: {
-                            Text("Open \(provider.tool)")
-                                .font(.caption.weight(.medium))
-                                .padding(.horizontal, 9).frame(height: 24)
-                                .glassEffect(.regular.interactive(), in: .capsule)
-                        }
-                        .buttonStyle(.plain)
-                        Button { store.addAccount(provider) } label: { IconCircle(systemName: "plus", size: 24) }
-                            .buttonStyle(.plain)
+                        Pill(text: "Open \(provider.tool)")
+                            .onTapGesture { store.open(provider) }
+                        IconCircle(systemName: "plus", size: 24)
+                            .onTapGesture { store.addAccount(provider) }
                             .help("Add \(provider.title) account")
                     }
                 }
@@ -422,5 +407,21 @@ struct AboutView: View {
         }
         .frame(width: 320)
         .background(.regularMaterial)
+    }
+}
+
+/// Capsule label used as a tappable control. Buttons whose labels change while pressed crash
+/// SwiftUI's button gesture on this OS inside menu bar windows, so controls here are tap targets.
+struct Pill: View {
+    let text: String
+    var prominent = false
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(prominent ? Color.white : Color.primary)
+            .padding(.horizontal, 10).frame(height: 24)
+            .contentShape(Capsule())
+            .glassEffect(prominent ? .regular.tint(Color.accentColor).interactive() : .regular.interactive(), in: .capsule)
     }
 }
