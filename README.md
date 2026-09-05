@@ -14,29 +14,45 @@ No proxy. Nothing sits between the CLI and the API. Each login is kept in the ap
 
 ## Install
 
-Requires macOS 26 or newer, Xcode 26, and at least one of Claude Code, Codex CLI or Grok CLI already signed in.
+Requires macOS 26 or newer and at least one of Claude Code, Codex CLI or Grok CLI already signed in.
 
-**Homebrew**, builds from source on your Mac so it opens without Gatekeeper warnings:
+**Homebrew**
 
 ```sh
-brew install samuelpatro/vibejuice/vibejuice
-cp -R "$(brew --prefix vibejuice)/VibeJuice.app" /Applications/
-open /Applications/VibeJuice.app
+brew install --cask samuelpatro/tap/vibejuice
 ```
 
-**From a checkout:**
+**Download**
+
+Grab the DMG from [Releases](https://github.com/samuelpatro/vibejuice/releases), drag VibeJuice to Applications. The build is not notarized yet, so macOS blocks the first launch. Clear the flag once and it opens normally:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/VibeJuice.app
+```
+
+The Homebrew cask does this for you.
+
+**From source** (needs Xcode 26)
 
 ```sh
 git clone https://github.com/samuelpatro/vibejuice.git
 cd vibejuice
 scripts/make-signing-cert.sh   # once: self-signed identity so Keychain permission sticks across builds
 scripts/bundle.sh              # builds build/VibeJuice.app and opens it
-cp -R build/VibeJuice.app /Applications/
 ```
 
 The app appears as a drop icon in the menu bar with one colored dot per provider. Add it to System Settings > General > Login Items to start it at login.
 
-There are no prebuilt downloads. macOS 26 blocks unsigned apps that arrive over the network, and the app is not notarized yet, so it is compiled where it runs. `scripts/bundle.sh --no-open` builds without launching, `swift run` runs it straight from the package during development.
+## Release
+
+Push a tag and GitHub Actions builds the DMG on a macOS 26 runner, publishes the GitHub Release, and updates the cask in [homebrew-tap](https://github.com/samuelpatro/homebrew-tap).
+
+```sh
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The workflow needs one secret, `TAP_TOKEN`, a fine-grained token with Contents read and write on `homebrew-tap`. `scripts/release.sh <version>` runs the same pipeline locally.
 
 ## Accounts
 
