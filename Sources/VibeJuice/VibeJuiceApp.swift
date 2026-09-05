@@ -3,10 +3,13 @@ import SwiftUI
 @main
 struct VibeJuiceApp: App {
     @StateObject private var store = Store()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     init() {
         // Menu bar only, no Dock icon, also when run via `swift run`.
         NSApplication.shared.setActivationPolicy(.accessory)
+        Log.line("launch \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")")
+        NSSetUncaughtExceptionHandler { Log.line("uncaught exception: \($0.name.rawValue) \($0.reason ?? "")") }
     }
 
     var body: some Scene {
@@ -43,5 +46,12 @@ struct MenuBarLabel: View {
                 }
             }
         }
+    }
+}
+
+/// Marks clean exits in the log, so a missing marker after the last line means a crash or kill.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_ notification: Notification) {
+        Log.line("terminate (quit)")
     }
 }
