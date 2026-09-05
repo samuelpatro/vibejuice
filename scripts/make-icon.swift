@@ -91,6 +91,7 @@ func png(_ image: NSImage, pixels: Int) -> Data {
 
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let iconset = root.appendingPathComponent("build/AppIcon.iconset")
+try? FileManager.default.createDirectory(at: root.appendingPathComponent("build"), withIntermediateDirectories: true)
 try? FileManager.default.removeItem(at: iconset)
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 let base = drawIcon(size: 1024)
@@ -101,6 +102,6 @@ for (name, px) in [("16x16", 16), ("16x16@2x", 32), ("32x32", 32), ("32x32@2x", 
 try png(base, pixels: 1024).write(to: root.appendingPathComponent("docs/icon.png"))
 let p = Process()
 p.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
-p.arguments = ["-c", "icns", iconset.path, "-o", root.appendingPathComponent("build/AppIcon.icns").path]
+p.arguments = ["-c", "icns", iconset.path, "-o", root.appendingPathComponent("Resources/AppIcon.icns").path]
 try p.run(); p.waitUntilExit()
-print(p.terminationStatus == 0 ? "wrote build/AppIcon.icns and docs/icon.png" : "iconutil failed")
+print(p.terminationStatus == 0 ? "wrote Resources/AppIcon.icns and docs/icon.png" : "iconutil failed")

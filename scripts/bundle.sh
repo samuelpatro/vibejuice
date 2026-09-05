@@ -6,15 +6,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${VERSION:-0.1.0}"
-swift build -c release 2>&1 | tail -3
-BIN="$(swift build -c release --show-bin-path)/VibeJuice"
+# BIN can point at an already built binary (Homebrew formula does this); otherwise build here.
+if [[ -z "${BIN:-}" ]]; then
+  swift build -c release 2>&1 | tail -3
+  BIN="$(swift build -c release --show-bin-path)/VibeJuice"
+fi
 APP="build/VibeJuice.app"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/VibeJuice"
-[[ -f build/AppIcon.icns ]] || swift scripts/make-icon.swift >/dev/null
-cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
