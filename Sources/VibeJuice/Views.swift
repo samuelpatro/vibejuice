@@ -106,14 +106,12 @@ struct ProviderSection: View {
                     .padding(.horizontal, 8).padding(.bottom, 10)
             } else {
                 ForEach(rows) { a in
-                    Button {
-                        store.activate(a)
-                    } label: {
-                        AccountRow(account: a)
-                            .contentShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu { rowMenu(a) }
+                    // A tap gesture, not a Button: the row label re-renders on hover, and SwiftUI's
+                    // button gesture crashes on this OS when its label changes mid-press.
+                    AccountRow(account: a)
+                        .contentShape(RoundedRectangle(cornerRadius: 8))
+                        .onTapGesture { store.activate(a) }
+                        .contextMenu { rowMenu(a) }
                 }
             }
         }
