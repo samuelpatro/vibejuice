@@ -10,6 +10,7 @@ struct VibeJuiceApp: App {
         NSApplication.shared.setActivationPolicy(.accessory)
         Log.line("launch \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")")
         NSSetUncaughtExceptionHandler { Log.line("uncaught exception: \($0.name.rawValue) \($0.reason ?? "")") }
+        CrashLog.install()
     }
 
     var body: some Scene {
@@ -60,5 +61,20 @@ struct MenuBarLabel: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         Log.line("terminate (quit)")
+    }
+}
+
+/// Writes the signal and a symbolized stack to the app log on a crash. This Mac keeps no crash
+/// reports, so this is the only trace a crash leaves.
+enum CrashLog {
+    static func install() {
+        for sig in [SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGFPE] {
+            signal(sig) { s in
+                Log.line("CRASH signal \(s)")
+                for line in Thread.callStackSymbols.prefix(25) { Log.line("  \(line)") }
+                signal(s, SIG_DFL)
+                raise(s)
+            }
+        }
     }
 }

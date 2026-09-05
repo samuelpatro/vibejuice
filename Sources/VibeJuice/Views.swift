@@ -240,14 +240,14 @@ struct TokenMaxChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "bolt.fill").font(.caption2)
-            Text("tokenmax · resets in \(nudge.hours) h · \(Int(nudge.window.usedPercent.rounded()))% used")
+            Text("tokenmax \(nudge.hours) h")
                 .font(.caption2.weight(.medium)).monospacedDigit()
         }
         .foregroundStyle(Color.purple)
         .lineLimit(1).fixedSize()
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(Color.purple.opacity(0.14), in: Capsule())
-        .help("Less than half of this weekly window is used and it resets soon. Whatever is left is lost at reset.")
+        .help("\(nudge.window.label): \(Int(nudge.window.usedPercent.rounded()))% used, resets in \(nudge.hours) h. Less than half used and about to reset, so whatever is left is lost. Use it now.")
     }
 }
 
