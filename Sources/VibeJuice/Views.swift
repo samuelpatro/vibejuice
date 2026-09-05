@@ -5,14 +5,12 @@ struct PopoverView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GlassEffectContainer(spacing: 10) {
-                VStack(spacing: 4) {
-                    ForEach(Provider.allCases) { p in
-                        ProviderSection(provider: p)
-                    }
+            VStack(spacing: 6) {
+                ForEach(Provider.allCases) { p in
+                    ProviderSection(provider: p)
                 }
             }
-            .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 4)
+            .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 6)
             Divider()
             footer
             if let n = store.notice {
@@ -26,28 +24,27 @@ struct PopoverView: View {
             }
         }
         .frame(width: 440)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
-        .padding(8)
+        .background(HoverEnabler())
         .containerBackground(.clear, for: .window)
+        .background(.thinMaterial)
         .animation(.easeOut(duration: 0.15), value: store.notice)
     }
 
     private var footer: some View {
         HStack(spacing: 8) {
             Text(store.lastRefresh.map { "Updated \(Relative.text(from: $0))" } ?? "Loading…")
-                .font(.system(size: 11)).foregroundStyle(.tertiary)
+                .font(.caption).foregroundStyle(.secondary)
             Spacer(minLength: 8)
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
                     Button {
                         store.reload()
                     } label: {
-                        Image(systemName: "arrow.clockwise")
+                        IconCircle(systemName: "arrow.clockwise")
                             .rotationEffect(.degrees(store.refreshing ? 360 : 0))
                             .animation(store.refreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: store.refreshing)
                     }
-                    .buttonStyle(.glass)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                     .help("Refresh")
                     Menu {
                         Toggle("Auto-switch when limit is hit", isOn: $store.autoSwitch)
@@ -56,13 +53,9 @@ struct PopoverView: View {
                         Divider()
                         Button("Quit VibeJuice") { NSApp.terminate(nil) }
                     } label: {
-                        Image(systemName: "ellipsis")
-                            .frame(width: 26, height: 20)
-                            .contentShape(Rectangle())
+                        IconCircle(systemName: "ellipsis")
                     }
-                    .menuStyle(.button)
-                    .buttonStyle(.glass)
-                    .controlSize(.small)
+                    .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
                 }
@@ -82,15 +75,20 @@ struct ProviderSection: View {
         let rows = store.accounts(for: provider)
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
-                Text(provider.title).font(.system(size: 12.5, weight: .semibold))
-                Text("\(rows.count)").font(.system(size: 12)).foregroundStyle(.tertiary)
+                Text(provider.title).font(.headline)
+                Text("\(rows.count)").font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 GlassEffectContainer(spacing: 6) {
                     HStack(spacing: 6) {
-                        Button("Open \(provider.tool)") { store.open(provider) }
-                            .buttonStyle(.glass).controlSize(.mini).fixedSize()
-                        Button { store.addAccount(provider) } label: { Image(systemName: "plus") }
-                            .buttonStyle(.glass).controlSize(.mini)
+                        Button { store.open(provider) } label: {
+                            Text("Open \(provider.tool)")
+                                .font(.caption.weight(.medium))
+                                .padding(.horizontal, 9).frame(height: 24)
+                                .glassEffect(.regular.interactive(), in: .capsule)
+                        }
+                        .buttonStyle(.plain)
+                        Button { store.addAccount(provider) } label: { IconCircle(systemName: "plus", size: 24) }
+                            .buttonStyle(.plain)
                             .help("Add \(provider.title) account")
                     }
                 }
@@ -99,7 +97,7 @@ struct ProviderSection: View {
 
             if rows.isEmpty {
                 Text("Not signed in. Press + to sign in.")
-                    .font(.system(size: 11)).foregroundStyle(.tertiary)
+                    .font(.callout).foregroundStyle(.secondary)
                     .padding(.horizontal, 8).padding(.bottom, 10)
             } else {
                 ForEach(rows) { a in
@@ -142,7 +140,7 @@ struct AccountRow: View {
                 }
                 .frame(width: 12, height: 12)
                 Text(account.displayName)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.body)
                     .lineLimit(1).truncationMode(.middle)
                     .layoutPriority(1)
                 if let plan = account.plan { Chip(text: plan) }
@@ -154,19 +152,19 @@ struct AccountRow: View {
                 if account.provider == .codex, case .ok = account.status {
                     codexExtras
                 }
+                if let n = account.tokenMax {
+                    TokenMaxChip(nudge: n)
+                }
             }
             .padding(.leading, 20)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .glassEffect(rowGlass, in: .rect(cornerRadius: 12))
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(account.isActive ? Color.accentColor.opacity(0.18) : hovering ? Color.primary.opacity(0.06) : .clear)
+        )
         .onHover { hovering = $0 }
         .opacity(account.spent ? 0.8 : 1)
-    }
-
-    private var rowGlass: Glass {
-        if account.isActive { return .regular.tint(Color.accentColor.opacity(0.35)).interactive() }
-        if hovering { return .regular.interactive() }
-        return .clear
     }
 
     @ViewBuilder
@@ -177,17 +175,17 @@ struct AccountRow: View {
                 ForEach(windows) { w in Meter(window: w) }
             }
         case .loading:
-            Text("Loading usage…").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+            Text("Loading usage…").font(.caption).foregroundStyle(.secondary)
         case .noData:
             Text("No usage data for \(account.provider.tool) yet. Switching works.")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                .font(.caption).foregroundStyle(.secondary)
         case .expired:
             Text(account.isActive
                  ? "Token expired. Start \(account.provider.tool) once and it refreshes."
                  : "Token expired. Switch to this account and start \(account.provider.tool) once.")
-                .font(.system(size: 10.5)).foregroundStyle(.orange)
+                .font(.caption).foregroundStyle(.orange)
         case .error(let msg):
-            Text(msg).font(.system(size: 10.5)).foregroundStyle(.orange)
+            Text(msg).font(.caption).foregroundStyle(.orange)
         }
     }
 
@@ -197,15 +195,15 @@ struct AccountRow: View {
             let left = Int((account.headroom ?? 0).rounded())
             HStack(spacing: 6) {
                 Text("\(left)% left")
-                    .font(.system(size: 11.5, weight: .semibold)).monospacedDigit()
-                    .foregroundStyle(account.spent ? Color.red : left <= 20 ? Color.yellow : Color.primary)
-                Text(subline).font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.tertiary)
+                    .font(.callout.weight(.semibold)).monospacedDigit()
+                    .foregroundStyle(account.spent ? Color.red : left <= 20 ? Color.orange : Color.primary)
+                Text(subline).font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
             .lineLimit(1).fixedSize()
         } else if case .expired = account.status {
-            Text("Expired").font(.system(size: 11, weight: .medium)).foregroundStyle(.orange)
+            Text("Expired").font(.callout.weight(.medium)).foregroundStyle(.orange)
         } else if case .noData = account.status, account.isActive {
-            Text("Active").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            Text("Active").font(.callout.weight(.medium)).foregroundStyle(.secondary)
         }
     }
 
@@ -214,7 +212,7 @@ struct AccountRow: View {
         HStack(spacing: 8) {
             if let r = account.renewsAt {
                 Text("renews \(r.formatted(.dateTime.day().month(.twoDigits)))")
-                    .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.tertiary)
+                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
             if let n = account.manualResets, n > 0 {
                 Chip(text: "\(n) reset\(n == 1 ? "" : "s") left")
@@ -230,14 +228,32 @@ struct AccountRow: View {
     }
 }
 
+/// "Use it before it resets": weekly quota mostly unused and the reset is hours away.
+struct TokenMaxChip: View {
+    let nudge: TokenMaxNudge
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "bolt.fill").font(.caption2)
+            Text("tokenmax · resets in \(nudge.hours) h · \(Int(nudge.window.usedPercent.rounded()))% used")
+                .font(.caption2.weight(.medium)).monospacedDigit()
+        }
+        .foregroundStyle(Color.purple)
+        .lineLimit(1).fixedSize()
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(Color.purple.opacity(0.14), in: Capsule())
+        .help("Less than half of this weekly window is used and it resets soon. Whatever is left is lost at reset.")
+    }
+}
+
 struct Chip: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.system(size: 9.5, weight: .medium))
+            .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)
             .lineLimit(1).truncationMode(.tail)
-            .padding(.horizontal, 5).padding(.vertical, 1.5)
+            .padding(.horizontal, 6).padding(.vertical, 2)
             .background(.quaternary, in: Capsule())
     }
 }
@@ -249,18 +265,27 @@ struct Meter: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(shortLabel)
-                .font(.system(size: 10.5))
+                .font(.caption)
                 .foregroundStyle(window.secondary ? .tertiary : .secondary)
                 .lineLimit(1).fixedSize()
-            Bar(used: window.usedPercent, secondary: window.secondary)
+            Gauge(value: min(max(window.usedPercent, 0), 100), in: 0...100) { EmptyView() }
+                .gaugeStyle(.accessoryLinearCapacity)
+                .tint(barColor)
+                .opacity(window.secondary ? 0.7 : 1)
             Text("\(Int(window.usedPercent.rounded()))%")
-                .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
-                .foregroundStyle(window.exhausted ? Color.red : window.usedPercent >= 80 ? Color.yellow : (window.secondary ? Color.secondary : Color.primary))
+                .font(.caption.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(window.exhausted ? Color.red : window.usedPercent >= 80 ? Color.orange : (window.secondary ? Color.secondary : Color.primary))
                 .lineLimit(1).fixedSize()
                 .frame(minWidth: 32, alignment: .trailing)
         }
         .frame(maxWidth: .infinity)
         .help(helpText)
+    }
+
+    private var barColor: Color {
+        if window.exhausted { return .red }
+        if window.usedPercent >= 80 { return .orange }
+        return .green
     }
 
     private var shortLabel: String {
@@ -319,5 +344,31 @@ enum Relative {
         if s < 60 { return "just now" }
         if s < 3600 { return "\(Int(s / 60)) min ago" }
         return "\(Int((s / 3600).rounded())) h ago"
+    }
+}
+
+/// One shape for every icon button in the app: a circular interactive glass disc.
+struct IconCircle: View {
+    let systemName: String
+    var size: CGFloat = 28
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.42, weight: .medium))
+            .frame(width: size, height: size)
+            .contentShape(Circle())
+            .glassEffect(.regular.interactive(), in: .circle)
+    }
+}
+
+/// Menu bar windows don't deliver hover events until they become key; ask for them explicitly.
+struct HoverEnabler: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { v.window?.acceptsMouseMovedEvents = true }
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.window?.acceptsMouseMovedEvents = true
     }
 }

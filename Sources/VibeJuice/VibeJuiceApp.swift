@@ -29,12 +29,13 @@ struct VibeJuiceApp: App {
 }
 
 /// Shows a dot per provider: green = active account has headroom, yellow = low, red = spent.
+/// A bolt appears while any account has unused weekly quota about to reset (tokenmax).
 struct MenuBarLabel: View {
     @ObservedObject var store: Store
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: "drop.halffull")
+            Image(systemName: store.accounts.contains { $0.tokenMax != nil } ? "bolt.fill" : "drop.halffull")
             ForEach(Provider.allCases) { p in
                 if let a = store.activeAccount(for: p), let h = a.headroom {
                     Circle().fill(h <= 0.5 ? Color.red : h <= 20 ? Color.yellow : Color.green)

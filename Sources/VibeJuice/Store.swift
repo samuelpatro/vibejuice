@@ -76,6 +76,22 @@ final class Store: ObservableObject {
         refreshing = false
         lastRefresh = Date()
         if autoSwitch { autoSwitchIfNeeded() }
+        notifyTokenMax()
+    }
+
+    /// One notification per account per reset window when the tokenmax nudge appears.
+    private func notifyTokenMax() {
+        let key = "tokenMaxNotified"
+        var seen = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        for a in accounts {
+            guard let n = a.tokenMax else { continue }
+            let id = "\(a.id)|\(n.key)"
+            guard !seen.contains(id) else { continue }
+            seen.insert(id)
+            Notifier.post(title: "Use it before it resets",
+                          body: "\(a.provider.title) \(a.displayName): weekly window resets in \(n.hours) h with \(Int(n.window.usedPercent.rounded()))% used.")
+        }
+        UserDefaults.standard.set(Array(seen).suffix(200), forKey: key)
     }
 
     func refresh(_ id: String) async {

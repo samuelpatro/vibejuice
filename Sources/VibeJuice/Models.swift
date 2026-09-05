@@ -29,6 +29,13 @@ struct QuotaWindow: Identifiable {
 
     var leftPercent: Double { max(0, 100 - usedPercent) }
     var exhausted: Bool { usedPercent >= 99.5 }
+    var isWeekly: Bool { label.hasPrefix("Week") || label == "Weekly" || id.contains("week") }
+}
+
+struct TokenMaxNudge {
+    let window: QuotaWindow
+    let hours: Int
+    var key: String { "\(window.id)|\(Int(window.resetsAt?.timeIntervalSince1970 ?? 0))" }
 }
 
 enum AccountStatus {
@@ -69,6 +76,21 @@ struct Account: Identifiable {
     }
 
     var spent: Bool { status.windows.contains { $0.exhausted } }
+
+    /// Tokenmax: a weekly window under 50% used whose reset is within 24 hours. Whatever is
+    /// left vanishes at reset, so this is the moment to use it. Same rule as the statusline nudge.
+    var tokenMax: TokenMaxNudge? {
+        let now = Date()
+        return status.windows
+            .filter { $0.isWeekly && $0.usedPercent < 50 }
+            .compactMap { w -> TokenMaxNudge? in
+                guard let r = w.resetsAt else { return nil }
+                let hours = r.timeIntervalSince(now) / 3600
+                guard hours > 0, hours <= 24 else { return nil }
+                return TokenMaxNudge(window: w, hours: Int(hours.rounded(.up)))
+            }
+            .min { $0.window.resetsAt! < $1.window.resetsAt! }
+    }
     var soonestReset: Date? { status.windows.compactMap { $0.exhausted ? $0.resetsAt : nil }.min() }
     var nextReset: Date? { status.windows.compactMap(\.resetsAt).min() }
 }
