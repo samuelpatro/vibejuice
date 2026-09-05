@@ -16,12 +16,27 @@ struct PopoverView: View {
             footer
             if let n = store.notice {
                 Divider()
-                Text(n)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .transition(.opacity)
+                HStack(spacing: 10) {
+                    Text(n)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let r = store.pendingRestart {
+                        Button("Restart \(r.sessions.count == 1 ? "session" : "\(r.sessions.count) sessions")") {
+                            store.restartPendingSessions()
+                        }
+                        .buttonStyle(.glassProminent)
+                        .controlSize(.small)
+                        .fixedSize()
+                        .help("Quits the running \(r.provider.tool) session\(r.sessions.count == 1 ? "" : "s") and reopens each one in its folder with \(r.provider.resumeCommand), signed in as \(r.account).")
+                        Button("Later") { store.dismissRestart() }
+                            .buttonStyle(.glass)
+                            .controlSize(.small)
+                            .fixedSize()
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .transition(.opacity)
             }
         }
         .frame(width: 440)

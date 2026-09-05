@@ -8,6 +8,8 @@ final class Store: ObservableObject {
     @Published var refreshing = false
     @Published var lastRefresh: Date?
     @Published var notice: String?
+    /// Sessions that were running when the login changed; they keep the old account until restarted.
+    @Published var pendingRestart: PendingRestart?
     @Published var autoSwitch: Bool = UserDefaults.standard.bool(forKey: "autoSwitch") {
         didSet { UserDefaults.standard.set(autoSwitch, forKey: "autoSwitch"); if autoSwitch { autoSwitchIfNeeded() } }
     }
@@ -157,9 +159,36 @@ final class Store: ObservableObject {
             return
         }
         reload()
-        let running = runningSessions(account.provider)
+        let running = runningSessionList(account.provider)
+        pendingRestart = running.isEmpty ? nil : PendingRestart(provider: account.provider, account: account.displayName, sessions: running)
         show("\(account.provider.tool) is now signed in as \(account.displayName)."
-             + (running > 0 ? " \(running) running session\(running == 1 ? "" : "s") keep the old account until restarted." : ""))
+             + (running.isEmpty ? "" : " \(running.count) running session\(running.count == 1 ? "" : "s") still use the old account."))
+    }
+
+    /// Quits the sessions that predate the switch and reopens each one in its folder with the
+    /// provider's resume command, so the conversation continues under the new account.
+    func dismissRestart() {
+        pendingRestart = nil
+        notice = nil
+    }
+
+    func restartPendingSessions() {
+        guard let pending = pendingRestart else { return }
+        pendingRestart = nil
+        noticeTask?.cancel(); notice = nil
+        for session in pending.sessions {
+            kill(session.pid, SIGTERM)
+        }
+        // Give the CLIs a moment to flush their transcripts before relaunching.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            for session in pending.sessions {
+                if kill(session.pid, 0) == 0 { kill(session.pid, SIGKILL) }
+                let dir = session.cwd.replacingOccurrences(of: "'", with: "'\\''")
+                Terminal.run("cd '\(dir)' && \(pending.provider.resumeCommand)")
+            }
+            show("Restarted \(pending.sessions.count) \(pending.provider.tool) session\(pending.sessions.count == 1 ? "" : "s") as \(pending.account).")
+        }
     }
 
     /// When the active account is spent, move to the account with the most headroom.
@@ -206,15 +235,27 @@ final class Store: ObservableObject {
         Terminal.run("cd ~ && \(provider.binary)")
     }
 
-    func runningSessions(_ provider: Provider) -> Int {
+    func runningSessions(_ provider: Provider) -> Int { runningSessionList(provider).count }
+
+    /// Running CLI processes for a provider with their working directories (via lsof).
+    func runningSessionList(_ provider: Provider) -> [RunningSession] {
+        let pids = shell("/usr/bin/pgrep", ["-x", provider.binary]).split(separator: "\n").compactMap { Int32($0) }
+        return pids.map { pid in
+            let out = shell("/usr/sbin/lsof", ["-a", "-p", "\(pid)", "-d", "cwd", "-Fn"])
+            let cwd = out.split(separator: "\n").first { $0.hasPrefix("n") }.map { String($0.dropFirst()) } ?? NSHomeDirectory()
+            return RunningSession(pid: pid, cwd: cwd)
+        }
+    }
+
+    private func shell(_ path: String, _ args: [String]) -> String {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        p.arguments = ["-x", provider.binary]
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
         let out = Pipe(); p.standardOutput = out; p.standardError = Pipe()
-        guard (try? p.run()) != nil else { return 0 }
+        guard (try? p.run()) != nil else { return "" }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        return text.split(separator: "\n").count
+        return String(decoding: data, as: UTF8.self)
     }
 
     // MARK: Notice
@@ -224,7 +265,8 @@ final class Store: ObservableObject {
         noticeTask?.cancel()
         noticeTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 6_000_000_000)
-            if !Task.isCancelled { notice = nil }
+            // Keep the notice up while a restart offer is attached to it.
+            if !Task.isCancelled && pendingRestart == nil { notice = nil }
         }
     }
 }

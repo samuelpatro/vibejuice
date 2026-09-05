@@ -17,6 +17,22 @@ enum Provider: String, CaseIterable, Identifiable, Codable {
     }
     /// Providers without a known usage endpoint show accounts and switching only.
     var hasUsage: Bool { self != .grok }
+    /// Reopens the most recent session in the current folder after a restart.
+    var resumeCommand: String {
+        switch self { case .claude: "claude --continue"; case .codex: "codex resume --last"; case .grok: "grok --continue" }
+    }
+}
+
+struct RunningSession: Identifiable {
+    let pid: Int32
+    let cwd: String
+    var id: Int32 { pid }
+}
+
+struct PendingRestart {
+    let provider: Provider
+    let account: String
+    let sessions: [RunningSession]
 }
 
 struct QuotaWindow: Identifiable {
