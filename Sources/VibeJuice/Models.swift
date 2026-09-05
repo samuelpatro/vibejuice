@@ -26,6 +26,8 @@ enum Provider: String, CaseIterable, Identifiable, Codable {
 struct RunningSession: Identifiable {
     let pid: Int32
     let cwd: String
+    /// App hosting the session (cmux, Ghostty, iTerm, Terminal), nil when it could not be told.
+    let terminal: String?
     var id: Int32 { pid }
 }
 

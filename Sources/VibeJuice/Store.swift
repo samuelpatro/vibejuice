@@ -184,8 +184,7 @@ final class Store: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             for session in pending.sessions {
                 if kill(session.pid, 0) == 0 { kill(session.pid, SIGKILL) }
-                let dir = session.cwd.replacingOccurrences(of: "'", with: "'\\''")
-                Terminal.run("cd '\(dir)' && \(pending.provider.resumeCommand)")
+                Terminal.run(pending.provider.resumeCommand, cwd: session.cwd, host: session.terminal)
             }
             show("Restarted \(pending.sessions.count) \(pending.provider.tool) session\(pending.sessions.count == 1 ? "" : "s") as \(pending.account).")
         }
@@ -227,12 +226,12 @@ final class Store: ObservableObject {
     /// The next reload captures the new account into the vault automatically.
     func addAccount(_ provider: Provider) {
         reload()
-        Terminal.run("cd ~ && \(provider.loginCommand)")
-        show("Sign in to the other \(provider.title) account in Terminal, then hit refresh here.")
+        Terminal.run(provider.loginCommand, cwd: NSHomeDirectory())
+        show("Sign in to the other \(provider.title) account in the terminal, then hit refresh here.")
     }
 
     func open(_ provider: Provider) {
-        Terminal.run("cd ~ && \(provider.binary)")
+        Terminal.run(provider.binary, cwd: NSHomeDirectory())
     }
 
     func runningSessions(_ provider: Provider) -> Int { runningSessionList(provider).count }
@@ -249,8 +248,25 @@ final class Store: ObservableObject {
         return tops.map { pid in
             let out = shell("/usr/sbin/lsof", ["-a", "-p", "\(pid)", "-d", "cwd", "-Fn"])
             let cwd = out.split(separator: "\n").first { $0.hasPrefix("n") }.map { String($0.dropFirst()) } ?? NSHomeDirectory()
-            return RunningSession(pid: pid, cwd: cwd)
+            return RunningSession(pid: pid, cwd: cwd, terminal: hostApp(of: pid))
         }
+    }
+
+    /// Walks up the parent chain until an app bundle shows up (…/cmux.app/Contents/MacOS/cmux)
+    /// and returns its name, so a restarted session reopens in the terminal it came from.
+    private func hostApp(of pid: Int32) -> String? {
+        var current = pid
+        for _ in 0..<12 {
+            let line = shell("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(current)"]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let gap = line.firstIndex(of: " ") else { return nil }
+            let command = line[gap...].trimmingCharacters(in: .whitespaces)
+            if let range = command.range(of: ".app/Contents/MacOS/") {
+                return command[..<range.lowerBound].split(separator: "/").last.map(String.init)
+            }
+            guard let parent = Int32(line[..<gap]), parent > 1 else { return nil }
+            current = parent
+        }
+        return nil
     }
 
     private func shell(_ path: String, _ args: [String]) -> String {
@@ -292,33 +308,58 @@ enum Notifier {
     }
 }
 
+/// Opens a new terminal window or workspace that runs `command` in `cwd`, then leaves a shell
+/// open. `host` is the app that hosted the session being restarted, so it reopens where it was.
+/// Unknown or missing hosts fall back to the first installed of cmux, Ghostty, iTerm, Terminal.
 enum Terminal {
-    /// Opens a new terminal window running `command`, then leaves a shell open. Uses Ghostty or
-    /// iTerm when installed, Terminal.app otherwise.
-    static func run(_ command: String) {
-        let fm = FileManager.default
-        if fm.fileExists(atPath: "/Applications/Ghostty.app") {
-            launch("/usr/bin/open", ["-na", "Ghostty", "--args", "-e", "zsh", "-lc", command + "; exec zsh -l"])
-            return
+    private static let order = ["cmux", "Ghostty", "iTerm", "Terminal"]
+    private static let cmuxCLI = ["/Applications/cmux.app/Contents/Resources/bin/cmux", "/opt/homebrew/bin/cmux", "/usr/local/bin/cmux"]
+        .first { FileManager.default.fileExists(atPath: $0) }
+
+    private static func installed(_ app: String) -> Bool {
+        switch app {
+        case "cmux": cmuxCLI != nil
+        case "Ghostty": FileManager.default.fileExists(atPath: "/Applications/Ghostty.app")
+        case "iTerm": FileManager.default.fileExists(atPath: "/Applications/iTerm.app")
+        default: app == "Terminal"
         }
-        let app = fm.fileExists(atPath: "/Applications/iTerm.app") ? "iTerm" : "Terminal"
-        let escaped = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let script = app == "iTerm"
-            ? """
-              tell application "iTerm"
-                  activate
-                  set w to (create window with default profile)
-                  tell current session of w to write text "\(escaped)"
-              end tell
-              """
-            : """
-              tell application "Terminal"
-                  activate
-                  do script "\(escaped)"
-              end tell
-              """
+    }
+
+    static func run(_ command: String, cwd: String, host: String? = nil) {
+        let app = host.flatMap { order.contains($0) && installed($0) ? $0 : nil } ?? order.first(where: installed) ?? "Terminal"
+        let full = "cd \(quoted(cwd)) && \(command); exec zsh -l"
+        Log.line("terminal: \(app) runs \(command) in \(cwd)")
+        switch app {
+        case "cmux":
+            launch(cmuxCLI!, ["workspace", "create", "--cwd", cwd, "--command", "zsh -lc \(quoted(full))"])
+        case "Ghostty":
+            launch("/usr/bin/open", ["-na", "Ghostty", "--args", "-e", "zsh", "-lc", full])
+        case "iTerm":
+            script("""
+                tell application "iTerm"
+                    activate
+                    set w to (create window with default profile)
+                    tell current session of w to write text "\(escaped(full))"
+                end tell
+                """, app)
+        default:
+            script("""
+                tell application "Terminal"
+                    activate
+                    do script "\(escaped(full))"
+                end tell
+                """, app)
+        }
+    }
+
+    private static func quoted(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    private static func escaped(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private static func script(_ source: String, _ app: String) {
         var err: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&err)
+        NSAppleScript(source: source)?.executeAndReturnError(&err)
         if let err { Log.line("terminal: \(app) script failed: \(err[NSAppleScript.errorMessage] ?? err)") }
     }
 
