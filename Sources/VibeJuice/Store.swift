@@ -293,17 +293,39 @@ enum Notifier {
 }
 
 enum Terminal {
+    /// Opens a new terminal window running `command`, then leaves a shell open. Uses Ghostty or
+    /// iTerm when installed, Terminal.app otherwise.
     static func run(_ command: String) {
-        let escaped = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let script = """
-        tell application "Terminal"
-            activate
-            do script "\(escaped)"
-        end tell
-        """
-        if let s = NSAppleScript(source: script) {
-            var err: NSDictionary?
-            s.executeAndReturnError(&err)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: "/Applications/Ghostty.app") {
+            launch("/usr/bin/open", ["-na", "Ghostty", "--args", "-e", "zsh", "-lc", command + "; exec zsh -l"])
+            return
         }
+        let app = fm.fileExists(atPath: "/Applications/iTerm.app") ? "iTerm" : "Terminal"
+        let escaped = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let script = app == "iTerm"
+            ? """
+              tell application "iTerm"
+                  activate
+                  set w to (create window with default profile)
+                  tell current session of w to write text "\(escaped)"
+              end tell
+              """
+            : """
+              tell application "Terminal"
+                  activate
+                  do script "\(escaped)"
+              end tell
+              """
+        var err: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&err)
+        if let err { Log.line("terminal: \(app) script failed: \(err[NSAppleScript.errorMessage] ?? err)") }
+    }
+
+    private static func launch(_ path: String, _ args: [String]) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        do { try p.run() } catch { Log.line("terminal: launch failed: \(error)") }
     }
 }
