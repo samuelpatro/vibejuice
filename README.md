@@ -12,7 +12,20 @@ No proxy. Nothing sits between the CLI and the API. Each login is kept in the ap
 
 ## Install
 
-Requirements: macOS 26 or newer, Xcode 26 (for the Swift toolchain), and Claude Code or Codex CLI already signed in.
+Requires macOS 26 or newer and Claude Code or Codex CLI already signed in.
+
+**Homebrew**
+
+```sh
+brew tap samuelpatro/tap
+brew install --cask vibejuice
+```
+
+**Download**
+
+Grab `VibeJuice-<version>.zip` from [Releases](https://github.com/samuelpatro/homebrew-tap/releases), unzip, drag `VibeJuice.app` to Applications. The build is not notarized, so the first launch needs right-click > Open. Homebrew handles that for you.
+
+**From source** (needs Xcode 26)
 
 ```sh
 git clone https://github.com/samuelpatro/vibejuice.git
@@ -21,9 +34,9 @@ scripts/make-signing-cert.sh   # once: self-signed identity so Keychain permissi
 scripts/bundle.sh              # builds build/VibeJuice.app and opens it
 ```
 
-The app appears as a drop icon in the menu bar with one colored dot per provider. To keep it around, drag `build/VibeJuice.app` into `/Applications` and add it to System Settings > General > Login Items.
+The app appears as a drop icon in the menu bar with one colored dot per provider. To keep it around, add it to System Settings > General > Login Items.
 
-`scripts/bundle.sh --no-open` builds without launching. `swift run` runs it straight from the package during development.
+`scripts/bundle.sh --no-open` builds without launching. `swift run` runs it straight from the package during development. `scripts/release.sh <version>` builds, zips, publishes a GitHub release and updates the cask.
 
 ## Accounts
 
