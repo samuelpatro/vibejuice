@@ -35,7 +35,7 @@ cask "vibejuice" do
 
   url "https://github.com/$TAP_REPO/releases/download/v#{version}/VibeJuice-#{version}.dmg"
   name "VibeJuice"
-  desc "Menu bar quota meter and account switcher for Claude Code and Codex CLI"
+  desc "One-click account switcher for Claude Code, Codex CLI and Grok CLI"
   homepage "https://github.com/$SOURCE_REPO"
 
   depends_on macos: :tahoe

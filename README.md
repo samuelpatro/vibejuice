@@ -2,11 +2,13 @@
 
 <h1 align="center">VibeJuice</h1>
 
-<p align="center">How much juice is left in each of your Claude Code and Codex accounts, and one click to switch.</p>
+<p align="center">Switch Claude Code, Codex and Grok accounts in one click. Keep coding.</p>
 
 <p align="center"><img src="docs/preview.png" width="900" alt="VibeJuice popover in the menu bar"></p>
 
-VibeJuice is a macOS menu bar app. It lists every Claude Code, Codex CLI and Grok CLI account you have signed in on this Mac, shows the quota windows for each one (session, weekly, per model) with reset times, and lets you switch the active account the same way `/login` does. After a switch, every new `claude`, `codex` or `grok` you start uses that account.
+VibeJuice is a menu bar switcher for your AI coding accounts. When the account you are on runs out of juice, pick another one and keep going. No sign-out, no `/login` dance, no config editing. Every new `claude`, `codex` or `grok` you start uses the account you picked, exactly as if you had logged in with it.
+
+The quota meters are there so you know when to switch, not the other way round. Each account shows its session, weekly and per-model windows with reset times, and auto-switch can flip to the account with the most headroom the moment the active one hits a limit.
 
 No proxy. Nothing sits between the CLI and the API. Each login is kept in the app's own Keychain vault and copied into the place the CLI reads from when you pick it. Quota comes from the same endpoints the CLIs call for `/usage`.
 

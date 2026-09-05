@@ -4,7 +4,7 @@ cask "vibejuice" do
 
   url "https://github.com/samuelpatro/homebrew-vibejuice/releases/download/v#{version}/VibeJuice-#{version}.dmg"
   name "VibeJuice"
-  desc "Menu bar quota meter and account switcher for Claude Code and Codex CLI"
+  desc "One-click account switcher for Claude Code, Codex CLI and Grok CLI"
   homepage "https://github.com/samuelpatro/vibejuice"
 
   depends_on macos: :tahoe
