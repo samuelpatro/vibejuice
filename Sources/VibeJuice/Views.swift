@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PopoverView: View {
     @EnvironmentObject var store: Store
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +52,10 @@ struct PopoverView: View {
                         Divider()
                         Button("Rescan logins") { store.reload() }
                         Divider()
+                        Button("About VibeJuice") {
+                            openWindow(id: "about")
+                            NSApp.activate(ignoringOtherApps: true)
+                        }
                         Button("Quit VibeJuice") { NSApp.terminate(nil) }
                     } label: {
                         IconCircle(systemName: "ellipsis")
@@ -370,5 +375,38 @@ struct HoverEnabler: NSViewRepresentable {
     }
     func updateNSView(_ nsView: NSView, context: Context) {
         nsView.window?.acceptsMouseMovedEvents = true
+    }
+}
+
+// MARK: - About
+
+struct AboutView: View {
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 128, height: 128)
+                .padding(.top, 28)
+            Text("VibeJuice")
+                .font(.system(size: 26, weight: .bold))
+            Text("Version \(version)")
+                .font(.body).foregroundStyle(.secondary)
+            Text("Switch Claude Code, Codex and Grok accounts in one click.\nKeep coding.")
+                .font(.title3)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 28)
+                .padding(.top, 6)
+            Link("View on GitHub", destination: URL(string: "https://github.com/samuelpatro/vibejuice")!)
+                .font(.body)
+                .padding(.top, 4)
+                .padding(.bottom, 30)
+        }
+        .frame(width: 320)
+        .background(.regularMaterial)
     }
 }

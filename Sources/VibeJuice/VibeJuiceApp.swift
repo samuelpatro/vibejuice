@@ -20,6 +20,13 @@ struct VibeJuiceApp: App {
         }
         .menuBarExtraStyle(.window)
 
+        Window("About VibeJuice", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+        .defaultLaunchBehavior(.suppressed)
+
         // VIBEJUICE_DEBUG_WINDOW=1 also shows the popover as a plain window (screenshots, dev).
         Window("VibeJuice", id: "debug") {
             PopoverView().environmentObject(store)
