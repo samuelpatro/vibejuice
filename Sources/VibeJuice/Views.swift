@@ -139,15 +139,18 @@ struct AccountRow: View {
                 Text(account.displayName)
                     .font(.system(size: 12, design: .monospaced))
                     .lineLimit(1).truncationMode(.middle)
+                    .layoutPriority(1)
                 if let plan = account.plan { Chip(text: plan) }
-                if let r = account.renewsAt {
-                    Text("renews \(r.formatted(.dateTime.month(.twoDigits).day()))")
-                        .font(.system(size: 10.5)).foregroundStyle(.tertiary).fixedSize()
-                }
                 Spacer(minLength: 6)
                 trailing
             }
-            meters.padding(.leading, 20)
+            HStack(alignment: .center, spacing: 12) {
+                meters
+                if account.provider == .codex, case .ok = account.status {
+                    codexExtras
+                }
+            }
+            .padding(.leading, 20)
         }
         .padding(.horizontal, 8).padding(.vertical, 7)
         .background(
@@ -186,14 +189,25 @@ struct AccountRow: View {
                     .font(.system(size: 11.5, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(account.spent ? Color.red : left <= 20 ? Color.yellow : Color.primary)
                 Text(subline).font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.tertiary)
-                if account.provider == .codex, let n = account.manualResets {
-                    Chip(text: "\(n) reset\(n == 1 ? "" : "s")")
-                }
             }
             .lineLimit(1).fixedSize()
         } else if case .expired = account.status {
             Text("Expired").font(.system(size: 11, weight: .medium)).foregroundStyle(.orange)
         }
+    }
+
+    /// Renewal date and manual resets sit at the end of the meter line, where Codex has room.
+    private var codexExtras: some View {
+        HStack(spacing: 8) {
+            if let r = account.renewsAt {
+                Text("renews \(r.formatted(.dateTime.day().month(.twoDigits)))")
+                    .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(.tertiary)
+            }
+            if let n = account.manualResets, n > 0 {
+                Chip(text: "\(n) reset\(n == 1 ? "" : "s") left")
+            }
+        }
+        .lineLimit(1).fixedSize()
     }
 
     private var subline: String {
@@ -229,7 +243,8 @@ struct Meter: View {
             Text("\(Int(window.usedPercent.rounded()))%")
                 .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
                 .foregroundStyle(window.exhausted ? Color.red : window.usedPercent >= 80 ? Color.yellow : (window.secondary ? Color.secondary : Color.primary))
-                .frame(width: 30, alignment: .trailing)
+                .lineLimit(1).fixedSize()
+                .frame(minWidth: 32, alignment: .trailing)
         }
         .frame(maxWidth: .infinity)
         .help(helpText)
@@ -237,7 +252,7 @@ struct Meter: View {
 
     private var shortLabel: String {
         switch window.label {
-        case "Session": return "5h"
+        case "Session", "5-hour": return "5h"
         case "Week, all models", "Weekly": return "Week"
         case "Daily": return "1d"
         default:
