@@ -39,21 +39,63 @@ struct VibeJuiceApp: App {
     private let debugWindow = ProcessInfo.processInfo.environment["VIBEJUICE_DEBUG_WINDOW"] != nil
 }
 
-/// Shows a dot per provider: green = active account has headroom, yellow = low, red = spent.
-/// A bolt appears while any account has unused weekly quota about to reset (tokenmax).
+/// The app icon's glass as a template image. Its fill level is the smallest headroom among the
+/// active accounts, and a bolt joins it while unused weekly quota is about to reset (tokenmax).
+/// MenuBarExtra labels only draw text and images, so everything is baked into one image.
 struct MenuBarLabel: View {
     @ObservedObject var store: Store
 
     var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: store.accounts.contains { $0.tokenMax != nil } ? "bolt.fill" : "drop.halffull")
-            ForEach(Provider.allCases) { p in
-                if let a = store.activeAccount(for: p), let h = a.headroom {
-                    Circle().fill(h <= 0.5 ? Color.red : h <= 20 ? Color.yellow : Color.green)
-                        .frame(width: 6, height: 6)
-                }
+        let levels = Provider.allCases.compactMap { store.activeAccount(for: $0)?.headroom }
+        Image(nsImage: MenuBarIcon.image(level: levels.min().map { $0 / 100 },
+                                         bolt: store.accounts.contains { $0.tokenMax != nil }))
+    }
+}
+
+enum MenuBarIcon {
+    static func image(level: Double?, bolt: Bool) -> NSImage {
+        let size = NSSize(width: bolt ? 30 : 18, height: 18)
+        let img = NSImage(size: size, flipped: false) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            // Same tumbler as scripts/make-icon.swift, scaled to a menu bar glyph.
+            let gw: CGFloat = 10, gh: CGFloat = 13
+            let gx: CGFloat = 1.5, gy: CGFloat = 1.5
+            let glass = CGMutablePath()
+            glass.move(to: CGPoint(x: gx, y: gy + gh))
+            glass.addLine(to: CGPoint(x: gx + gw * 0.10, y: gy + gh * 0.06))
+            glass.addQuadCurve(to: CGPoint(x: gx + gw * 0.18, y: gy), control: CGPoint(x: gx + gw * 0.11, y: gy))
+            glass.addLine(to: CGPoint(x: gx + gw * 0.82, y: gy))
+            glass.addQuadCurve(to: CGPoint(x: gx + gw * 0.90, y: gy + gh * 0.06), control: CGPoint(x: gx + gw * 0.89, y: gy))
+            glass.addLine(to: CGPoint(x: gx + gw, y: gy + gh))
+            glass.closeSubpath()
+
+            // Juice: unknown headroom shows a neutral two-thirds so an empty glass always means spent.
+            ctx.saveGState()
+            ctx.addPath(glass); ctx.clip()
+            ctx.setFillColor(NSColor.black.withAlphaComponent(0.55).cgColor)
+            ctx.fill(CGRect(x: gx, y: gy, width: gw, height: gh * 0.88 * CGFloat(level ?? 0.66)))
+            ctx.restoreGState()
+
+            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.setLineJoin(.round)
+            ctx.setLineCap(.round)
+            ctx.setLineWidth(1.4)
+            ctx.addPath(glass)
+            ctx.strokePath()
+            // Straw.
+            ctx.move(to: CGPoint(x: gx + gw * 0.62, y: gy + gh * 0.55))
+            ctx.addLine(to: CGPoint(x: gx + gw * 0.92, y: gy + gh * 1.25))
+            ctx.strokePath()
+
+            if bolt, let symbol = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 11, weight: .bold)) {
+                let s = symbol.size
+                symbol.draw(in: CGRect(x: rect.maxX - s.width - 1, y: rect.midY - s.height / 2, width: s.width, height: s.height))
             }
+            return true
         }
+        img.isTemplate = true
+        return img
     }
 }
 

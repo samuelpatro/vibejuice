@@ -4,7 +4,7 @@
 
 <p align="center">Switch Claude Code, Codex and Grok accounts in one click. Keep coding.</p>
 
-<p align="center"><img src="docs/preview.png" width="900" alt="VibeJuice popover in the menu bar"></p>
+<p align="center"><img src="docs/preview.png" width="488" alt="VibeJuice popover in the menu bar"></p>
 
 VibeJuice is a menu bar switcher for your AI coding accounts. When the account you are on runs out of juice, pick another one and keep going. No sign-out, no `/login` dance, no config editing. Every new `claude`, `codex` or `grok` you start uses the account you picked, exactly as if you had logged in with it.
 
@@ -41,7 +41,7 @@ scripts/make-signing-cert.sh   # once: self-signed identity so Keychain permissi
 scripts/bundle.sh              # builds build/VibeJuice.app and opens it
 ```
 
-The app appears as a drop icon in the menu bar with one colored dot per provider. Add it to System Settings > General > Login Items to start it at login.
+The app sits in the menu bar as a small glass. Its fill level is the headroom of your active accounts, and a bolt joins it when a weekly window with unused quota is about to reset. Add it to System Settings > General > Login Items to start it at login.
 
 ## Release
 
