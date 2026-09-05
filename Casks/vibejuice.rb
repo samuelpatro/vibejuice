@@ -7,7 +7,7 @@ cask "vibejuice" do
   desc "Menu bar quota meter and account switcher for Claude Code and Codex CLI"
   homepage "https://github.com/samuelpatro/vibejuice"
 
-  depends_on macos: ">= :tahoe"
+  depends_on macos: :tahoe
 
   app "VibeJuice.app"
 
