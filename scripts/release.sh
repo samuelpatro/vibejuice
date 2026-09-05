@@ -2,7 +2,7 @@
 # Cut a release: build, sign ad hoc, wrap in a DMG, publish to GitHub Releases, update the cask.
 #   scripts/release.sh 0.1.0
 #
-# The DMG is published on the public tap repo (samuelpatro/homebrew-tap) so `brew install` can
+# The DMG is published on the public tap repo (samuelpatro/homebrew-vibejuice) so `brew install` can
 # fetch it while the source repo stays private. The same release is mirrored on the source repo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 VERSION="${1:?usage: scripts/release.sh <version>}"
 TAG="v$VERSION"
 SOURCE_REPO="samuelpatro/vibejuice"
-TAP_REPO="samuelpatro/homebrew-tap"
+TAP_REPO="samuelpatro/homebrew-vibejuice"
 DMG="build/VibeJuice-$VERSION.dmg"
 
 # Ad hoc signature for distribution: no Keychain dialog, and a self-signed cert would not help
@@ -56,7 +56,7 @@ git tag -f "$TAG" >/dev/null
 git push -q origin main
 git push -q -f origin "$TAG"
 
-NOTES="VibeJuice $VERSION. Open the DMG, drag VibeJuice to Applications, right-click > Open the first time. Or: brew tap samuelpatro/tap && brew install --cask vibejuice"
+NOTES="VibeJuice $VERSION. Open the DMG, drag VibeJuice to Applications, right-click > Open the first time. Or: brew install --cask samuelpatro/vibejuice/vibejuice"
 gh release create "$TAG" "$DMG" --repo "$SOURCE_REPO" --title "VibeJuice $VERSION" --notes "$NOTES" >/dev/null 2>&1 \
   || gh release upload "$TAG" "$DMG" --repo "$SOURCE_REPO" --clobber >/dev/null
 echo "released https://github.com/$SOURCE_REPO/releases/tag/$TAG"
@@ -73,7 +73,7 @@ if gh repo view "$TAP_REPO" >/dev/null 2>&1; then
   gh release create "$TAG" "$DMG" --repo "$TAP_REPO" --title "VibeJuice $VERSION" --notes "$NOTES" >/dev/null 2>&1 \
     || gh release upload "$TAG" "$DMG" --repo "$TAP_REPO" --clobber >/dev/null
   rm -rf "$TAPDIR"
-  echo "tap updated: brew tap samuelpatro/tap && brew install --cask vibejuice"
+  echo "tap updated: brew install --cask samuelpatro/vibejuice/vibejuice"
 else
   echo "tap repo $TAP_REPO not found; create it (public) and rerun to enable brew install"
 fi
