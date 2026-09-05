@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quota Bench</title>
+<!--
+  PROTOTYPE. Throwaway. Three structurally different layouts for the account quota
+  dashboard + account switcher, switchable via ?variant=A|B|C or the floating bar.
+  All data is fake and in memory. Nothing here touches real credentials.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#131314; --bg-2:#19191b; --bg-3:#202023; --line:#28282c; --line-2:#333338;
+    --fg:#ececee; --fg-2:#a4a4ab; --fg-3:#6b6b73;
+    --ok:#2fbf71; --ok-dim:#1d6e45; --warn:#e0b341; --bad:#e5534b;
+    --accent:#8db4ff; --accent-dim:rgba(141,180,255,.14);
+    --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --r:6px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--sans);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .num{font-variant-numeric:tabular-nums}
+  .muted{color:var(--fg-2)} .faint{color:var(--fg-3)}
+  .hide{display:none!important}
+
+  /* shared bar */
+  .bar{height:4px;border-radius:2px;background:var(--bg-3);overflow:hidden}
+  .bar>i{display:block;height:100%;border-radius:2px;background:var(--ok);transition:width .3s ease}
+  .bar.warn>i{background:var(--warn)} .bar.bad>i{background:var(--bad)}
+  .bar.dim>i{background:var(--ok-dim)}
+
+  /* shared pills/buttons */
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:500;line-height:18px}
+  .pill.active{background:var(--accent-dim);color:var(--accent)}
+  .pill.active::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .pill.plan{background:var(--bg-3);color:var(--fg-2)}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--line-2);color:var(--fg);background:var(--bg-2);font-weight:500;font-size:13px;white-space:nowrap}
+  .btn:hover{border-color:var(--fg-3);background:var(--bg-3)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#0b1020}
+  .btn.primary:hover{filter:brightness(1.06)}
+  .btn.ghost{border-color:transparent;background:transparent;color:var(--fg-2)}
+  .btn.ghost:hover{color:var(--fg);background:var(--bg-3)}
+  .btn[disabled]{opacity:.45;cursor:default;pointer-events:none}
+  .btn svg{width:14px;height:14px}
+  .spin svg{animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%) translateY(8px);opacity:0;background:var(--bg-3);border:1px solid var(--line-2);color:var(--fg);padding:10px 14px;border-radius:8px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);transition:all .18s ease;pointer-events:none;max-width:92vw}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast code{font-family:var(--mono);color:var(--accent)}
+
+  /* ---- Variant A: Ledger ---- */
+  .A{max-width:1280px;margin:0 auto;padding:28px 32px 120px}
+  .A .top{display:flex;justify-content:space-between;align-items:center;gap:20px;padding-bottom:20px;border-bottom:1px solid var(--line);margin-bottom:8px}
+  .A .top h1{font-size:15px;font-weight:600;margin:0}
+  .A .using{display:flex;gap:28px;font-size:13px}
+  .A .using b{font-weight:500;color:var(--fg)}
+  .A .group{padding:18px 0 6px}
+  .A .group h2{font-size:14px;font-weight:600;margin:0 0 6px;display:flex;gap:10px;align-items:baseline}
+  .A .group h2 span{font-weight:400;color:var(--fg-3);font-size:13px}
+  .A .row{display:grid;grid-template-columns:300px 1fr auto;gap:28px;align-items:center;padding:16px 0;border-bottom:1px solid var(--line)}
+  .A .row:last-child{border-bottom:0}
+  .A .row.is-active{background:linear-gradient(90deg,var(--accent-dim),transparent 45%);margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:var(--r)}
+  .A .id{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .A .id .name{font-family:var(--mono);font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .A .id .sub{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--fg-2);flex-wrap:wrap}
+  .A .windows{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px}
+  .A .win{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .A .win .hd{display:flex;justify-content:space-between;font-size:13px;color:var(--fg-2)}
+  .A .win .hd b{color:var(--fg);font-weight:600}
+  .A .win .ft{font-size:12px;color:var(--fg-3)}
+  .A .win.dim .hd,.A .win.dim .ft{color:var(--fg-3)}
+  .A .win.dim .hd b{color:var(--fg-2)}
+  .A .actions{display:flex;gap:8px;align-items:center}
+
+  /* ---- Variant B: Cockpit ---- */
+  .B{max-width:1180px;margin:0 auto;padding:28px 32px 120px;display:grid;grid-template-columns:1fr 1fr;gap:28px}
+  .B header{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center}
+  .B header h1{font-size:15px;font-weight:600;margin:0}
+  .B .prov{display:flex;flex-direction:column;gap:14px}
+  .B .prov>h2{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-2);margin:0;display:flex;justify-content:space-between}
+  .B .hero{background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:18px 20px;display:flex;flex-direction:column;gap:16px;position:relative}
+  .B .hero::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:2px;background:var(--accent)}
+  .B .hero .who{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .B .hero .name{font-family:var(--mono);font-size:15px;font-weight:600}
+  .B .hero .meta{font-size:12px;color:var(--fg-2);margin-top:4px}
+  .B .hero .big{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px}
+  .B .stat{display:flex;flex-direction:column;gap:6px}
+  .B .stat .v{font-size:26px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+  .B .stat .v small{font-size:13px;color:var(--fg-2);font-weight:500;margin-left:4px}
+  .B .stat .l{font-size:12px;color:var(--fg-2)}
+  .B .stat .bar{height:6px;border-radius:3px}
+  .B .stat .r{font-size:12px;color:var(--fg-3)}
+  .B .hero .foot{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--line);padding-top:12px}
+  .B .hero .foot .hint{font-size:13px;color:var(--fg-2)}
+  .B .hero .foot .hint b{color:var(--fg);font-weight:500;font-family:var(--mono);font-size:12.5px}
+  .B .bench{display:flex;flex-direction:column}
+  .B .bench h3{font-size:12px;font-weight:500;color:var(--fg-3);margin:0 0 6px;display:flex;justify-content:space-between}
+  .B .b-row{display:grid;grid-template-columns:auto 1fr 64px auto;gap:14px;align-items:center;padding:10px 6px;border-radius:var(--r)}
+  .B .b-row:hover{background:var(--bg-2)}
+  .B .b-row .rank{width:18px;font-size:12px;color:var(--fg-3);text-align:right;font-variant-numeric:tabular-nums}
+  .B .b-row .n{font-family:var(--mono);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .B .b-row .n small{font-family:var(--sans);color:var(--fg-3);margin-left:8px;font-size:12px}
+  .B .b-row .bars{display:flex;flex-direction:column;gap:4px}
+  .B .b-row .pct{font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+  .B .b-row .pct small{display:block;font-weight:400;color:var(--fg-3);font-size:11px}
+  .B .b-row.next .n::after{content:"next";margin-left:8px;font:500 11px var(--sans);color:var(--accent);background:var(--accent-dim);padding:1px 6px;border-radius:999px}
+  .B .b-row.spent{opacity:.55}
+
+  /* ---- Variant C: Menu bar popover ---- */
+  .C{min-height:100vh;background:
+      radial-gradient(1200px 600px at 20% -10%,#26324a 0%,transparent 60%),
+      radial-gradient(900px 500px at 90% 110%,#3a2a3f 0%,transparent 60%),#0e1016;position:relative;padding-bottom:120px}
+  .C .menubar{height:26px;background:rgba(20,20,24,.85);backdrop-filter:blur(10px);display:flex;justify-content:flex-end;align-items:center;padding:0 12px;gap:16px;font-size:12px;color:#ddd}
+  .C .menubar .tray{display:flex;align-items:center;gap:6px;padding:0 6px;height:22px;border-radius:4px;background:rgba(255,255,255,.14)}
+  .C .menubar .tray i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+  .C .pop{position:absolute;right:112px;top:34px;width:392px;background:rgba(30,30,34,.92);backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,.1);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.6);overflow:hidden}
+  .C .pop::before{content:"";position:absolute;right:26px;top:-7px;width:12px;height:12px;background:rgba(30,30,34,.98);border-left:1px solid rgba(255,255,255,.1);border-top:1px solid rgba(255,255,255,.1);transform:rotate(45deg)}
+  .C .seg{display:flex;gap:2px;margin:12px 12px 6px;padding:3px;background:rgba(0,0,0,.35);border-radius:8px}
+  .C .seg button{flex:1;padding:5px 0;border-radius:6px;font-size:12.5px;font-weight:500;color:var(--fg-2)}
+  .C .seg button.on{background:var(--bg-3);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .C .seg button .k{margin-left:6px;color:var(--fg-3);font-weight:400}
+  .C .list{padding:4px 6px}
+  .C .c-row{display:grid;grid-template-columns:16px 1fr auto;gap:10px;align-items:center;padding:8px 8px;border-radius:8px;width:100%;text-align:left}
+  .C .c-row:hover{background:rgba(255,255,255,.05)}
+  .C .c-row .radio{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--fg-3);position:relative}
+  .C .c-row.on .radio{border-color:var(--accent)}
+  .C .c-row.on .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--accent)}
+  .C .c-row .body{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .C .c-row .n{font-family:var(--mono);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .C .c-row .n small{font-family:var(--sans);color:var(--fg-3);margin-left:6px}
+  .C .stack{display:flex;gap:3px;height:4px}
+  .C .stack .bar{flex:1}
+  .C .c-row .right{text-align:right;font-size:12px;color:var(--fg-2);white-space:nowrap}
+  .C .c-row .right b{display:block;color:var(--fg);font-weight:600;font-size:13px;font-variant-numeric:tabular-nums}
+  .C .c-row.spent .right b{color:var(--bad)}
+  .C .foot{border-top:1px solid rgba(255,255,255,.08);padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--fg-2)}
+  .C .foot .btn{padding:5px 10px;font-size:12px}
+  .C .desk{position:absolute;left:40px;top:120px;color:rgba(255,255,255,.35);font-size:13px;max-width:420px;line-height:1.6}
+  .C .desk code{font-family:var(--mono);color:rgba(255,255,255,.55);font-size:12px}
+
+  /* ---- floating prototype switcher ---- */
+  .proto-bar{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:6px;background:#fff;color:#111;border-radius:999px;box-shadow:0 8px 30px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.2);font:13px var(--sans);z-index:99}
+  .proto-bar button{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#111}
+  .proto-bar button:hover{background:#eee}
+  .proto-bar .lbl{padding:0 10px;min-width:220px;text-align:center;font-weight:500}
+  .proto-bar .lbl small{color:#777;font-weight:400;margin-left:6px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media (max-width:900px){.A .row{grid-template-columns:1fr;gap:12px}.A .windows{grid-template-columns:1fr}.B{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div class="toast" id="toast"></div>
+<nav class="proto-bar" aria-label="Prototype variant switcher">
+  <button id="prev" aria-label="Previous variant">&#8592;</button>
+  <div class="lbl" id="lbl"></div>
+  <button id="next" aria-label="Next variant">&#8594;</button>
+</nav>
+
+<script>
+/* ------------------------------------------------------------------ data */
+const now = new Date("2026-09-05T14:20:00");
+const h = n => new Date(now.getTime() + n*3600e3);
+const d = n => h(n*24);
+
+const state = {
+  claude: [
+    { id:"t•••@1•••.dev",  plan:"Max 20x", active:true,  windows:[
+      {k:"fable", label:"7-day Fable 5", pct:100, reset:d(2.3)},
+      {k:"5h",    label:"5-hour limit",  pct:100, reset:h(1.7)},
+      {k:"7d",    label:"7-day limit",   pct:100, reset:d(2.3)} ]},
+    { id:"t•••@p•••.gg",   plan:"Max 20x", windows:[
+      {k:"fable", label:"7-day Fable 5", pct:100, reset:d(4.1)},
+      {k:"5h",    label:"5-hour limit",  pct:100, reset:h(3.2)},
+      {k:"7d",    label:"7-day limit",   pct:100, reset:d(4.1)} ]},
+    { id:"t•••@t•••.gg",   plan:"Max 5x",  windows:[
+      {k:"fable", label:"7-day Fable 5", pct:62,  reset:d(5.6)},
+      {k:"5h",    label:"5-hour limit",  pct:18,  reset:h(4.6)},
+      {k:"7d",    label:"7-day limit",   pct:41,  reset:d(5.6)} ]},
+    { id:"s•••@t•••.gg",   plan:"Max 5x",  windows:[
+      {k:"fable", label:"7-day Fable 5", pct:0,   reset:null},
+      {k:"5h",    label:"5-hour limit",  pct:0,   reset:null},
+      {k:"7d",    label:"7-day limit",   pct:0,   reset:null} ]},
+    { id:"t•••@g•••.com",  plan:"Max 20x", windows:[
+      {k:"fable", label:"7-day Fable 5", pct:88,  reset:d(1.2)},
+      {k:"5h",    label:"5-hour limit",  pct:100, reset:h(0.6)},
+      {k:"7d",    label:"7-day limit",   pct:76,  reset:d(1.2)} ]},
+  ],
+  codex: [
+    { id:"4630970a-a•••@1•••.dev", plan:"Pro 5x",  renews:d(-7.9), active:true, resets:{avail:2,next:d(15.1)}, windows:[
+      {k:"wk", label:"Weekly limit", pct:100, reset:d(1.4)} ]},
+    { id:"ae5d455f-t•••@1•••.dev", plan:"Pro 20x", renews:d(28.1), resets:{avail:1,next:d(28.4)}, windows:[
+      {k:"wk", label:"Weekly limit", pct:100, reset:d(5.2)} ]},
+    { id:"t•••@t•••.gg",           plan:"Pro 20x", renews:d(1.6),  resets:{avail:2,next:d(15.1)}, windows:[
+      {k:"wk", label:"Weekly limit", pct:85,  reset:d(1.2)} ]},
+    { id:"t•••@g•••.com",          plan:"Pro 20x", renews:d(-36),  resets:{avail:2,next:d(15.1)}, windows:[
+      {k:"wk", label:"Weekly limit", pct:50,  reset:d(1.3)} ]},
+  ],
+  lastRefresh: h(-0.1),
+};
+const PROVIDERS = [
+  {key:"claude", name:"Claude", tool:"Claude Code", mech:"CLAUDE_CONFIG_DIR"},
+  {key:"codex",  name:"Codex",  tool:"Codex CLI",   mech:"CODEX_HOME"},
+];
+
+/* --------------------------------------------------------------- helpers */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const pad = n => String(n).padStart(2,"0");
+const fmtAt = t => `${pad(t.getMonth()+1)}/${pad(t.getDate())}, ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+function rel(t){
+  const ms = t - now, s = Math.round(Math.abs(ms)/1000), past = ms < 0;
+  const u = s<3600 ? `${Math.max(1,Math.round(s/60))} min` : s<86400*1.5 ? `${Math.round(s/3600)} h` : `${Math.round(s/86400)} days`;
+  return past ? `${u} ago` : `in ${u}`;
+}
+const cls = pct => pct>=100 ? "bad" : pct>=80 ? "warn" : "";
+const leftOf = acc => Math.min(...acc.windows.map(w => 100 - w.pct));
+const spent = acc => acc.windows.some(w => w.pct>=100);
+const soonestReset = acc => acc.windows.filter(w=>w.pct>=100 && w.reset).map(w=>w.reset).sort((a,b)=>a-b)[0];
+function nextBest(list){ // most headroom, tie → soonest reset
+  return [...list].filter(a=>!a.active).sort((a,b)=> leftOf(b)-leftOf(a) || ((soonestReset(a)||d(99)) - (soonestReset(b)||d(99))))[0];
+}
+const activeOf = key => state[key].find(a=>a.active);
+
+let toastT;
+function toast(html){
+  const el = document.getElementById("toast");
+  el.innerHTML = html; el.classList.add("show");
+  clearTimeout(toastT); toastT = setTimeout(()=>el.classList.remove("show"), 3200);
+}
+function switchTo(pkey, id){
+  const p = PROVIDERS.find(p=>p.key===pkey);
+  state[pkey].forEach(a => a.active = a.id===id);
+  render();
+  toast(`${p.tool} now uses <code>${esc(id)}</code>. Open sessions keep the old account until restarted.`);
+}
+function refresh(pkey, id, btn){
+  btn.classList.add("spin"); btn.disabled = true;
+  setTimeout(()=>{ state.lastRefresh = new Date(); render(); toast(`Quota refreshed for <code>${esc(id)}</code>.`); }, 900);
+}
+function resetQuota(pkey, id){
+  const a = state[pkey].find(a=>a.id===id);
+  if(!a.resets || a.resets.avail<1) return;
+  a.resets.avail--; a.windows[0].pct = 0; a.windows[0].reset = d(7);
+  render(); toast(`Weekly limit reset for <code>${esc(id)}</code>. ${a.resets.avail} manual reset${a.resets.avail===1?"":"s"} left.`);
+}
+const icoRefresh = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>`;
+const icoSwap = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/></svg>`;
+
+/* ------------------------------------------------------------- variant A */
+function VariantA(){
+  const using = PROVIDERS.map(p => `<span><span class="muted">${p.tool}</span> &nbsp;<b class="mono">${esc(activeOf(p.key).id)}</b></span>`).join("");
+  const groups = PROVIDERS.map(p => {
+    const rows = state[p.key].map(a => {
+      const wins = a.windows.map(w => `
+        <div class="win ${w.k==="7d"?"dim":""}">
+          <div class="hd"><span>${w.label}</span><b class="num">${w.pct}%</b></div>
+          <div class="bar ${cls(w.pct)} ${w.k==="7d"?"dim":""}"><i style="width:${w.pct}%"></i></div>
+          <div class="ft">${w.reset ? (w.pct>=100 ? `resets ${rel(w.reset)} · ${fmtAt(w.reset)}` : `${rel(w.reset)} · ${fmtAt(w.reset)}`) : "No reset pending"}</div>
+        </div>`).join("");
+      const codexExtra = a.resets ? `
+        <div class="win">
+          <div class="hd"><span>Manual resets</span><b class="num">${a.resets.avail} <span class="muted" style="font-weight:400">available</span></b></div>
+          <div class="ft" style="margin-top:8px">Reset 1 · ${rel(a.resets.next)} · ${fmtAt(a.resets.next)}</div>
+        </div>` : "";
+      const sub = a.renews
+        ? `<span class="pill plan">${a.plan}</span><span>renews <b class="num">${fmtAt(a.renews)}</b> · ${rel(a.renews)}</span>`
+        : `<span class="pill plan">${a.plan}</span>`;
+      return `
+      <div class="row ${a.active?"is-active":""}">
+        <div class="id">
+          <div class="name" title="${esc(a.id)}">${p.key}-${esc(a.id)}.json</div>
+          <div class="sub">${sub}${a.active?`<span class="pill active">Active in ${p.tool}</span>`:""}</div>
+        </div>
+        <div class="windows" style="${a.resets?'grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)':''}">${wins}${codexExtra}</div>
+        <div class="actions">
+          ${a.resets ? `<button class="btn ghost" data-reset="${p.key}|${esc(a.id)}" ${a.resets.avail<1?"disabled":""}>${icoRefresh} Reset quota</button>` : ""}
+          <button class="btn ghost" data-refresh="${p.key}|${esc(a.id)}">${icoRefresh} Refresh</button>
+          ${a.active ? `<button class="btn" disabled>${icoSwap} In use</button>` : `<button class="btn" data-switch="${p.key}|${esc(a.id)}">${icoSwap} Switch</button>`}
+        </div>
+      </div>`;
+    }).join("");
+    return `<section class="group"><h2>${p.name} <span>${state[p.key].length}</span></h2>${rows}</section>`;
+  }).join("");
+  return `<div class="A">
+    <div class="top">
+      <h1>Accounts</h1>
+      <div class="using">${using}</div>
+      <span class="faint" style="font-size:12px">Updated ${rel(state.lastRefresh)}</span>
+    </div>${groups}</div>`;
+}
+
+/* ------------------------------------------------------------- variant B */
+function VariantB(){
+  const cols = PROVIDERS.map(p => {
+    const act = activeOf(p.key), nb = nextBest(state[p.key]);
+    const stats = act.windows.map(w => `
+      <div class="stat">
+        <div class="v ${w.pct>=100?'':''}" style="color:${w.pct>=100?'var(--bad)':w.pct>=80?'var(--warn)':'var(--fg)'}">${100-w.pct}<small>% left</small></div>
+        <div class="l">${w.label}</div>
+        <div class="bar ${cls(w.pct)}"><i style="width:${w.pct}%"></i></div>
+        <div class="r">${w.reset ? (w.pct>=100 ? `back ${rel(w.reset)}` : `resets ${rel(w.reset)}`) : "no reset pending"}</div>
+      </div>`).join("");
+    const blocked = spent(act);
+    const bench = [...state[p.key]].filter(a=>!a.active)
+      .sort((a,b)=> leftOf(b)-leftOf(a) || ((soonestReset(a)||d(99)) - (soonestReset(b)||d(99))))
+      .map((a,i) => `
+        <div class="b-row ${a===nb?"next":""} ${spent(a)?"spent":""}">
+          <div class="rank">${i+1}</div>
+          <div>
+            <div class="n" title="${esc(a.id)}">${esc(a.id)}<small>${a.plan}</small></div>
+            <div class="bars" style="margin-top:6px">${a.windows.map(w=>`<div class="bar ${cls(w.pct)}"><i style="width:${w.pct}%"></i></div>`).join("")}</div>
+          </div>
+          <div class="pct">${leftOf(a)}%<small>${spent(a) && soonestReset(a) ? "back "+rel(soonestReset(a)) : "headroom"}</small></div>
+          <button class="btn ghost" data-switch="${p.key}|${esc(a.id)}">Use</button>
+        </div>`).join("");
+    return `<section class="prov">
+      <h2>${p.name} <span class="faint" style="font-weight:400;text-transform:none;letter-spacing:0">${p.tool}</span></h2>
+      <div class="hero">
+        <div class="who">
+          <div>
+            <div class="name">${esc(act.id)}</div>
+            <div class="meta">${act.plan}${act.renews?` · renews ${fmtAt(act.renews)}`:""}${act.resets?` · ${act.resets.avail} manual reset${act.resets.avail===1?"":"s"} left`:""}</div>
+          </div>
+          <span class="pill active">Active</span>
+        </div>
+        <div class="big">${stats}</div>
+        <div class="foot">
+          <div class="hint">${blocked
+              ? (nb ? `Limit hit. Next best is <b>${esc(nb.id)}</b> with ${leftOf(nb)}% headroom.` : `Limit hit. No account has headroom.`)
+              : `Healthy. <b>${esc(nb.id)}</b> is next in line.`}</div>
+          <div style="display:flex;gap:8px">
+            ${act.resets ? `<button class="btn ghost" data-reset="${p.key}|${esc(act.id)}" ${act.resets.avail<1?"disabled":""}>Reset quota</button>`:""}
+            <button class="btn ghost" data-refresh="${p.key}|${esc(act.id)}">${icoRefresh}</button>
+            <button class="btn ${blocked?"primary":""}" data-switch="${p.key}|${esc(nb?nb.id:"")}" ${nb?"":"disabled"}>${icoSwap} Switch to next</button>
+          </div>
+        </div>
+      </div>
+      <div class="bench"><h3><span>Bench, most headroom first</span><span>${state[p.key].length-1} accounts</span></h3>${bench}</div>
+    </section>`;
+  }).join("");
+  return `<div class="B"><header><h1>Quota Bench</h1><span class="faint" style="font-size:12px">Updated ${rel(state.lastRefresh)}</span></header>${cols}</div>`;
+}
+
+/* ------------------------------------------------------------- variant C */
+let cTab = "claude";
+function VariantC(){
+  const p = PROVIDERS.find(p=>p.key===cTab);
+  const rows = state[p.key].map(a => `
+    <button class="c-row ${a.active?"on":""} ${spent(a)?"spent":""}" data-switch="${p.key}|${esc(a.id)}" ${a.active?"disabled":""} style="${a.active?'cursor:default':''}">
+      <span class="radio"></span>
+      <span class="body">
+        <span class="n" title="${esc(a.id)}">${esc(a.id)}<small>${a.plan}</small></span>
+        <span class="stack">${a.windows.map(w=>`<span class="bar ${cls(w.pct)} ${w.k==="7d"?"dim":""}"><i style="width:${w.pct}%"></i></span>`).join("")}</span>
+      </span>
+      <span class="right"><b>${leftOf(a)}%</b>${spent(a) && soonestReset(a) ? "back "+rel(soonestReset(a)) : (a.windows.some(w=>w.reset) ? "resets "+rel(a.windows.filter(w=>w.reset).map(w=>w.reset).sort((x,y)=>x-y)[0]) : "unused")}</span>
+    </button>`).join("");
+  const act = activeOf(p.key);
+  return `<div class="C">
+    <div class="menubar">
+      <span class="tray"><i></i> Quota Bench</span><span>Fri 5 Sep &nbsp;14:20</span>
+    </div>
+    <div class="desk">
+      Menu bar treatment. The popover is the whole app: pick a radio to make that account the one
+      <code>${p.tool}</code> launches with. Bars are, left to right, ${p.key==="claude"?"7-day Fable, 5-hour, 7-day":"weekly limit"}.
+    </div>
+    <div class="pop">
+      <div class="seg">${PROVIDERS.map(q=>`<button class="${q.key===cTab?"on":""}" data-tab="${q.key}">${q.name}<span class="k">${state[q.key].length}</span></button>`).join("")}</div>
+      <div class="list">${rows}</div>
+      <div class="foot">
+        <span>${p.tool} → <span class="mono" style="color:var(--fg)">${esc(act.id)}</span></span>
+        <span style="display:flex;gap:6px">
+          <button class="btn ghost" data-refresh="${p.key}|${esc(act.id)}">${icoRefresh}</button>
+          <button class="btn" data-launch="${p.key}">Open ${p.tool}</button>
+        </span>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* --------------------------------------------------------------- router */
+const VARIANTS = [
+  {k:"A", name:"Ledger, like the reference", fn:VariantA},
+  {k:"B", name:"Cockpit, active first",      fn:VariantB},
+  {k:"C", name:"Menu bar popover",           fn:VariantC},
+];
+function currentKey(){ const k = new URL(location.href).searchParams.get("variant"); return VARIANTS.some(v=>v.k===k) ? k : "A"; }
+function setKey(k){ const u = new URL(location.href); u.searchParams.set("variant", k); history.replaceState(null,"",u); render(); }
+function cycle(dir){ const i = VARIANTS.findIndex(v=>v.k===currentKey()); setKey(VARIANTS[(i+dir+VARIANTS.length)%VARIANTS.length].k); }
+
+function render(){
+  const v = VARIANTS.find(v=>v.k===currentKey());
+  document.getElementById("app").innerHTML = v.fn();
+  document.getElementById("lbl").innerHTML = `${v.k}<small>${v.name}</small>`;
+  document.body.style.background = v.k==="C" ? "#0e1016" : "var(--bg)";
+}
+document.getElementById("app").addEventListener("click", e => {
+  const b = e.target.closest("[data-switch],[data-refresh],[data-reset],[data-tab],[data-launch]");
+  if(!b || b.disabled) return;
+  if(b.dataset.switch){ const [p,id] = b.dataset.switch.split("|"); if(id) switchTo(p,id); }
+  else if(b.dataset.refresh){ const [p,id] = b.dataset.refresh.split("|"); refresh(p,id,b); }
+  else if(b.dataset.reset){ const [p,id] = b.dataset.reset.split("|"); resetQuota(p,id); }
+  else if(b.dataset.tab){ cTab = b.dataset.tab; render(); }
+  else if(b.dataset.launch){ const p = PROVIDERS.find(p=>p.key===b.dataset.launch); toast(`Would run <code>${p.mech}=~/.quota-bench/${p.key}/${esc(activeOf(p.key).id)} ${p.key==="claude"?"claude":"codex"}</code>`); }
+});
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+addEventListener("keydown", e => {
+  const t = e.target; if(t.matches("input,textarea,[contenteditable]")) return;
+  if(e.key==="ArrowLeft") cycle(-1); if(e.key==="ArrowRight") cycle(1);
+});
+render();
+</script>
+</body>
+</html>
