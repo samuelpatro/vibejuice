@@ -199,7 +199,9 @@ enum DebugLog {
         switch v {
         case let d as [String: Any]: return d.mapValues { redact($0) }
         case let a as [Any]: return a.map { redact($0) }
-        case let s as String: return s.count <= 24 && !s.contains("-") ? s : "<string \(s.count)>"
+        // Keep short enum-like values (plan names, window kinds); mask ids, dates and anything
+        // that looks like an address.
+        case let s as String: return s.count <= 24 && !s.contains("-") && !s.contains("@") ? s : "<string \(s.count)>"
         default: return v
         }
     }
