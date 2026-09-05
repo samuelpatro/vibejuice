@@ -14,41 +14,19 @@ No proxy. Nothing sits between the CLI and the API. Each login is kept in the ap
 
 ## Install
 
-Requires macOS 26 or newer and at least one of Claude Code, Codex CLI or Grok CLI already signed in.
-
-**Homebrew**
-
-```sh
-brew install --cask samuelpatro/vibejuice/vibejuice
-```
-
-**Download**
-
-Grab `VibeJuice-<version>.dmg` from [Releases](https://github.com/samuelpatro/vibejuice/releases), open it, drag VibeJuice to Applications. The build is not notarized, so the first launch needs right-click > Open. Homebrew handles that for you.
-
-**From source** (needs Xcode 26)
+Requires macOS 26 or newer, Xcode 26, and at least one of Claude Code, Codex CLI or Grok CLI already signed in.
 
 ```sh
 git clone https://github.com/samuelpatro/vibejuice.git
 cd vibejuice
 scripts/make-signing-cert.sh   # once: self-signed identity so Keychain permission sticks across builds
 scripts/bundle.sh              # builds build/VibeJuice.app and opens it
+cp -R build/VibeJuice.app /Applications/
 ```
 
 The app appears as a drop icon in the menu bar with one colored dot per provider. To keep it around, add it to System Settings > General > Login Items.
 
-`scripts/bundle.sh --no-open` builds without launching. `swift run` runs it straight from the package during development.
-
-## Release
-
-Push a tag and GitHub Actions does the rest: builds the DMG on a macOS 26 runner, publishes the GitHub Release, and updates the Homebrew cask.
-
-```sh
-git tag v0.3.0
-git push origin v0.3.0
-```
-
-The workflow needs one secret, `TAP_TOKEN`, a fine-grained token with Contents read and write on `homebrew-vibejuice`, so it can push the cask. `scripts/release.sh <version>` is the same pipeline run locally.
+There are no prebuilt downloads yet. An unsigned build downloaded from the internet is blocked by Gatekeeper on macOS 26, so until the app is notarized, building it yourself is the way in. `scripts/bundle.sh --no-open` builds without launching, `swift run` runs it straight from the package during development.
 
 ## Accounts
 
