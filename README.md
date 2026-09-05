@@ -37,7 +37,18 @@ scripts/bundle.sh              # builds build/VibeJuice.app and opens it
 
 The app appears as a drop icon in the menu bar with one colored dot per provider. To keep it around, add it to System Settings > General > Login Items.
 
-`scripts/bundle.sh --no-open` builds without launching. `swift run` runs it straight from the package during development. `scripts/release.sh <version>` builds a DMG, publishes a GitHub release and updates the cask.
+`scripts/bundle.sh --no-open` builds without launching. `swift run` runs it straight from the package during development.
+
+## Release
+
+Push a tag and GitHub Actions does the rest: builds the DMG on a macOS 26 runner, publishes the GitHub Release, and updates the Homebrew cask.
+
+```sh
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The workflow needs one secret, `TAP_TOKEN`, a fine-grained token with Contents read and write on `homebrew-vibejuice`, so it can push the cask. `scripts/release.sh <version>` is the same pipeline run locally.
 
 ## Accounts
 
