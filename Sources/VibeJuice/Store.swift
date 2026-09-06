@@ -30,6 +30,9 @@ final class Store {
 
     struct Update { let version: String; let url: URL }
 
+    /// Automatic refreshes leave an account alone this long after its last fetch.
+    static let minRefreshAge: TimeInterval = 60
+
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var updateTimer: Timer?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
@@ -62,9 +65,11 @@ final class Store {
     // MARK: Load
 
     /// Captures whatever is signed in right now into the vault, lists the vault, then refreshes
-    /// usage. Safe to call at any time; overlapping calls are harmless.
-    func reload() {
-        Task { await rescan(); await refreshAll() }
+    /// usage. Safe to call at any time; overlapping calls are harmless. Automatic reloads
+    /// (launch, timer, wake) skip accounts refreshed within the last minute; a user's click
+    /// (`force`) always fetches, so the usage endpoints are not hammered.
+    func reload(force: Bool = false) {
+        Task { await rescan(); await refreshAll(force: force) }
     }
 
     /// Reads the logins off the main actor and rebuilds `accounts`, keeping known usage.
@@ -87,13 +92,14 @@ final class Store {
     /// Refreshes every account. A call while one is already running is skipped, and `refreshing`
     /// is always cleared on exit, so the flag (and the spinner it drives) can never stick. Each
     /// request has a 30-second resource timeout, so this cannot hang across sleep.
-    func refreshAll() async {
+    func refreshAll(force: Bool = false) async {
         guard !refreshing else { return }
         refreshing = true
         defer { refreshing = false }
-        Log.line("refresh start accounts=\(accounts.count)")
+        let due = accounts.filter { force || ($0.updatedAt.map { Date().timeIntervalSince($0) } ?? .infinity) >= Store.minRefreshAge }
+        Log.line("refresh start accounts=\(due.count)/\(accounts.count)")
         await withTaskGroup(of: Void.self) { group in
-            for a in accounts { group.addTask { await self.refresh(a.id) } }
+            for a in due { group.addTask { await self.refresh(a.id) } }
         }
         lastRefresh = Date()
         Log.line("refresh done")
@@ -141,6 +147,11 @@ final class Store {
             case .failure(let e):
                 Log.line("refresh \(a.provider.rawValue) failed: \(e)")
                 if case UsageError.unauthorized = e { a.status = .expired }
+                else if case UsageError.http(429, _) = e {
+                    // Rate limited by the usage endpoint: keep the last good meters, they are
+                    // still true, and let the throttle space out the next attempt.
+                    if case .ok = a.status { a.updatedAt = Date() } else { a.status = .error("Rate limited, retrying later") }
+                }
                 else if case UsageError.http(let code, _) = e { a.status = .error("HTTP \(code)") }
                 else { a.status = .error((e as? URLError)?.localizedDescription ?? "Request failed") }
             }

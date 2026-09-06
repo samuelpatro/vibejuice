@@ -59,14 +59,14 @@ struct PopoverView: View {
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
                     RefreshButton()
-                        .tapTarget("Refresh usage", shape: AnyShape(Circle())) { store.reload() }
+                        .tapTarget("Refresh usage", shape: AnyShape(Circle())) { store.reload(force: true) }
                         .help("Refresh (⌘R)")
                     Menu {
                         Toggle("Auto-switch when limit is hit", isOn: Binding(get: { store.autoSwitch }, set: { store.autoSwitch = $0 }))
                         Toggle("Percent in menu bar", isOn: Binding(get: { store.showPercent }, set: { store.showPercent = $0 }))
                         Toggle("Launch at login", isOn: Binding(get: { store.launchAtLogin }, set: { store.setLaunchAtLogin($0) }))
                         Divider()
-                        Button("Rescan logins") { store.reload() }
+                        Button("Rescan logins") { store.reload(force: true) }
                             .keyboardShortcut("r")
                         Divider()
                         Button("About VibeJuice") {
@@ -453,9 +453,10 @@ enum GlassTint {
     }
 }
 
-/// Everything clickable in the popover, in one place: hit area, tap, keyboard focus with
-/// Return and Space, and VoiceOver button semantics. Not SwiftUI's `Button`: its gesture
-/// crashes on macOS 26 inside a menu bar window when the label re-renders mid-press.
+/// Everything clickable in the popover, in one place: hit area, tap, and VoiceOver button
+/// semantics. Not SwiftUI's `Button`: its gesture crashes on macOS 26 inside a menu bar window
+/// when the label re-renders mid-press. Not focusable either: a menu bar popover is not a
+/// tabbable surface, and focus would land on the first control every time it opens.
 struct TapTarget: ViewModifier {
     let label: String
     let shape: AnyShape
@@ -465,9 +466,6 @@ struct TapTarget: ViewModifier {
         content
             .contentShape(shape)
             .onTapGesture(perform: action)
-            .focusable()
-            .onKeyPress(.return) { action(); return .handled }
-            .onKeyPress(.space) { action(); return .handled }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(label)
