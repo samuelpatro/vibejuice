@@ -158,25 +158,63 @@ enum ClaudeMain {
     }
 }
 
+/// Codex keeps its login in CODEX_HOME/auth.json by default. With `cli_auth_credentials_store`
+/// set to "keyring" or "auto" in config.toml it lives in the Keychain instead, as a generic
+/// password with service "Codex Auth" and account "cli|<sha256 of the home path>". Auto mode
+/// reads the Keychain first and falls back to the file, and saving to the Keychain deletes
+/// the file, so writes mirror that.
 enum CodexMain {
-    static let authFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/auth.json")
+    static let home: URL = {
+        if let env = ProcessInfo.processInfo.environment["CODEX_HOME"], !env.isEmpty { return URL(fileURLWithPath: env) }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+    }()
+    static let authFile = home.appendingPathComponent("auth.json")
+    static let keychainService = "Codex Auth"
+
+    enum StoreMode: String { case file, keyring, auto, ephemeral }
+
+    static var storeMode: StoreMode {
+        guard let text = try? String(contentsOf: home.appendingPathComponent("config.toml"), encoding: .utf8) else { return .file }
+        for line in text.split(separator: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard t.hasPrefix("cli_auth_credentials_store") else { continue }
+            let raw = t.split(separator: "=", maxSplits: 1).last.map(String.init) ?? ""
+            let value = raw.split(separator: "#").first.map(String.init) ?? ""
+            return StoreMode(rawValue: value.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased()) ?? .file
+        }
+        return .file
+    }
+
+    /// Same key Codex derives: "cli|" plus the first 16 hex digits of SHA-256 over the canonical home path.
+    static var keychainAccount: String {
+        let canonical = home.resolvingSymlinksInPath().path
+        let hex = SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "cli|" + String(hex.prefix(16))
+    }
 
     static func read() -> MainLogin? {
-        guard let data = try? Data(contentsOf: authFile),
-              let creds = CodexCredentials(payload: data), let email = creds.email else { return nil }
+        let data: Data?
+        switch storeMode {
+        case .file: data = try? Data(contentsOf: authFile)
+        case .keyring: data = Keychain.read(service: keychainService, account: keychainAccount)
+        case .auto: data = Keychain.read(service: keychainService, account: keychainAccount) ?? (try? Data(contentsOf: authFile))
+        case .ephemeral: data = nil
+        }
+        guard let data, let creds = CodexCredentials(payload: data), let email = creds.email else { return nil }
         return MainLogin(email: email, payload: data)
     }
 
     static func write(_ payload: Data) throws {
         guard CodexCredentials(payload: payload) != nil else { throw AuthError.badPayload }
-        try payload.write(to: authFile, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authFile.path)
-    }
-
-    static func readProfile(_ dir: URL) -> MainLogin? {
-        guard let data = try? Data(contentsOf: dir.appendingPathComponent("auth.json")),
-              let creds = CodexCredentials(payload: data), let email = creds.email else { return nil }
-        return MainLogin(email: email, payload: data)
+        switch storeMode {
+        case .keyring, .auto:
+            try Keychain.write(service: keychainService, account: keychainAccount, value: String(decoding: payload, as: UTF8.self))
+            try? FileManager.default.removeItem(at: authFile)
+        case .file, .ephemeral:
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            try payload.write(to: authFile, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authFile.path)
+        }
     }
 }
 
