@@ -136,6 +136,7 @@ final class Store: ObservableObject {
         let task = Task { @MainActor in
             defer { refreshing = false; refreshTask = nil }
             refreshing = true
+            let start = Date()
             Log.line("refresh start accounts=\(accounts.count)")
             await withTaskGroup(of: Void.self) { group in
                 for a in accounts { group.addTask { await self.refresh(a.id) } }
@@ -145,6 +146,9 @@ final class Store: ObservableObject {
             if autoSwitch { autoSwitchIfNeeded() }
             notifyTokenMax()
             notifyLowQuota()
+            // Keep the spinner up long enough to be seen even when the requests finish instantly.
+            let elapsed = Date().timeIntervalSince(start)
+            if elapsed < 0.6 { try? await Task.sleep(nanoseconds: UInt64((0.6 - elapsed) * 1_000_000_000)) }
         }
         refreshTask = task
         await task.value

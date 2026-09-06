@@ -3,24 +3,6 @@ import SwiftUI
 struct PopoverView: View {
     @EnvironmentObject var store: Store
     @Environment(\.openWindow) private var openWindow
-    @State private var busy = false
-
-    /// Shows the spinner for at least most of a second so a fast refresh still visibly answers.
-    private func refresh() {
-        guard !busy else { return }
-        busy = true
-        store.reload()
-        // Stop when the refresh cycle reports done, and always by a hard cap, so the spinner
-        // can never hang no matter what a request does. Minimum ~0.5s so a fast one still shows.
-        Task { @MainActor in
-            let start = Date()
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            while store.refreshing && Date().timeIntervalSince(start) < 8 {
-                try? await Task.sleep(nanoseconds: 150_000_000)
-            }
-            busy = false
-        }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,8 +53,8 @@ struct PopoverView: View {
             Spacer(minLength: 8)
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
-                    IconCircle(systemName: "arrow.clockwise", busy: busy)
-                        .onTapGesture { refresh() }
+                    IconCircle(systemName: "arrow.clockwise", busy: store.refreshing)
+                        .onTapGesture { store.reload() }
                         .help("Refresh")
                     Menu {
                         Toggle("Auto-switch when limit is hit", isOn: $store.autoSwitch)
