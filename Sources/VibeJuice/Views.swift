@@ -10,8 +10,14 @@ struct PopoverView: View {
         guard !busy else { return }
         busy = true
         store.reload()
+        // Stop when the refresh cycle reports done, and always by a hard cap, so the spinner
+        // can never hang no matter what a request does. Minimum ~0.5s so a fast one still shows.
         Task { @MainActor in
-            await store.refreshAll()   // joins the run reload() just started, ends when it does
+            let start = Date()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            while store.refreshing && Date().timeIntervalSince(start) < 8 {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
             busy = false
         }
     }
