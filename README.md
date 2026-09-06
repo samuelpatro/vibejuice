@@ -71,6 +71,8 @@ Click a row to switch. Running Claude Code sessions pick up the new account on t
 
 ## Development
 
+- `swift test` runs the unit tests: quota math, alert rules, usage payload parsing, credential parsing, session and terminal helpers. Everything that touches the Keychain, files, processes or the network stays out of them.
+- Module map in [docs/architecture.md](docs/architecture.md).
 - `~/Library/Logs/VibeJuice/app.log` records load steps with status codes only.
 - `~/Library/Logs/VibeJuice/*-usage.json` holds the shape of provider responses, keys and numbers, no tokens.
 - `open --env VIBEJUICE_DEBUG_WINDOW=1 build/VibeJuice.app` also shows the popover as a normal window.
