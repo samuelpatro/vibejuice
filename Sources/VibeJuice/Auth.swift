@@ -79,6 +79,7 @@ struct CodexCredentials {
 
 struct GrokCredentials {
     let key: String
+    let userId: String?
     let email: String?
     let name: String?
     let expiresAt: Date?
@@ -89,6 +90,7 @@ struct GrokCredentials {
               let entry = root.values.compactMap({ $0 as? [String: Any] }).first(where: { ($0["key"] as? String)?.isEmpty == false }),
               let key = entry["key"] as? String else { return nil }
         self.key = key
+        userId = entry["user_id"] as? String
         email = entry["email"] as? String
         name = entry["first_name"] as? String
         if let s = entry["expires_at"] as? String {

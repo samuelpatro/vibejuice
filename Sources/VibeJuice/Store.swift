@@ -132,10 +132,9 @@ final class Store {
             guard let creds = CodexCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
             do { result = .success(try await UsageClient.codex(creds)) } catch { result = .failure(error) }
         case .grok:
-            // No known usage endpoint yet (see issue #1): show the account, report expiry only.
             guard let creds = GrokCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
-            update(id) { $0.status = (creds.expiresAt.map { $0 < Date() } ?? false) ? .expired : .noData; $0.updatedAt = Date() }
-            return
+            if let exp = creds.expiresAt, exp < Date() { update(id) { $0.status = .expired }; return }
+            do { result = .success(try await UsageClient.grok(creds)) } catch { result = .failure(error) }
         }
         update(id) { a in
             switch result {

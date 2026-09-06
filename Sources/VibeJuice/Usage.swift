@@ -187,6 +187,80 @@ enum UsageClient {
         return nil
     }
 
+    // MARK: Grok
+
+    /// Grok Build (xai-org/grok-build) is open source; these are the calls behind its /usage
+    /// command: the credits config from the CLI proxy, and the live tier from /user.
+    // Trailing slash matters: relative paths replace the last segment of a base without one.
+    private static let grokBase = URL(string: "https://cli-chat-proxy.grok.com/v1/")!
+    private static let grokClientVersion = "1.0.13"
+
+    private static func grokRequest(_ pathAndQuery: String, _ creds: GrokCredentials) -> URLRequest {
+        var req = URLRequest(url: URL(string: pathAndQuery, relativeTo: grokBase)!.absoluteURL)
+        req.setValue("Bearer \(creds.key)", forHTTPHeaderField: "Authorization")
+        req.setValue("xai-grok-cli", forHTTPHeaderField: "X-XAI-Token-Auth")
+        if let id = creds.userId { req.setValue(id, forHTTPHeaderField: "x-userid") }
+        req.setValue(grokClientVersion, forHTTPHeaderField: "x-grok-client-version")
+        req.setValue("interactive", forHTTPHeaderField: "x-grok-client-mode")
+        return req
+    }
+
+    static func grok(_ creds: GrokCredentials) async throws -> UsageResult {
+        let (data, resp) = try await session.data(for: grokRequest("billing?format=credits", creds))
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 || code == 403 { throw UsageError.unauthorized }
+        guard (200..<300).contains(code) else { throw UsageError.http(code, String(decoding: data.prefix(200), as: UTF8.self)) }
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw UsageError.badPayload }
+        DebugLog.shape("grok-billing", root)
+        var result = parseGrok(root)
+        guard !result.windows.isEmpty else { throw UsageError.badPayload }
+        result.plan = (try? await grokTier(creds)) ?? nil
+        return result
+    }
+
+    /// The one window Grok meters: `config.creditUsagePercent` of the weekly or monthly
+    /// allowance, reset at `currentPeriod.end`. The backend omits zero-valued fields, so a
+    /// missing percent with a period present means 0.
+    static func parseGrok(_ root: [String: Any]) -> UsageResult {
+        guard let config = root["config"] as? [String: Any] else { return UsageResult(windows: [], plan: nil, manualResets: nil) }
+        let period = config["currentPeriod"] as? [String: Any] ?? [:]
+        let type = (period["type"] as? String) ?? ""
+        var used = (config["creditUsagePercent"] as? Double) ?? 0
+        if config["creditUsagePercent"] == nil,
+           let spent = (config["used"] as? [String: Any])?["val"] as? Double,
+           let limit = (config["monthlyLimit"] as? [String: Any])?["val"] as? Double, limit > 0 {
+            used = spent / limit * 100
+        }
+        let reset = parseDate(period["end"] ?? config["billingPeriodEnd"])
+        guard config["creditUsagePercent"] != nil || reset != nil else { return UsageResult(windows: [], plan: nil, manualResets: nil) }
+        let (id, label) = type.contains("MONTHLY") ? ("grok-month", "Monthly limit") : ("grok-week", "Weekly limit")
+        let window = QuotaWindow(id: id, label: label, usedPercent: min(100, max(0, used)), resetsAt: reset, secondary: false)
+        return UsageResult(windows: [window], plan: nil, manualResets: nil)
+    }
+
+    /// Live subscription tier, only present with `include=subscription`.
+    static func grokTier(_ creds: GrokCredentials) async throws -> String? {
+        let (data, resp) = try await session.data(for: grokRequest("user?include=subscription", creds))
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        DebugLog.shape("grok-user", root)
+        return (root["subscriptionTier"] as? String).flatMap(grokTierLabel)
+    }
+
+    /// Backend tier names ("XPremium", "SuperGrokHeavy") as the CLI displays them.
+    static func grokTierLabel(_ tier: String) -> String? {
+        let t = tier.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return nil }
+        switch t {
+        case "XPremiumPlus", "x_premium_plus": return "X Premium+"
+        case "XPremium", "x_premium": return "X Premium"
+        case "XBasic", "x_basic": return "X Basic"
+        case "SuperGrokHeavy": return "SuperGrok Heavy"
+        case "SuperGrokLite": return "SuperGrok Lite"
+        default: return t
+        }
+    }
+
     static func codexConsumeReset(_ creds: CodexCredentials) async throws {
         var req = codexRequest("wham/rate-limit-reset-credits/consume", creds, method: "POST")
         req.httpBody = Data("{}".utf8)

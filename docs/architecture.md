@@ -6,7 +6,7 @@ One Swift package, one executable target, no dependencies. Files in `Sources/Vib
 | --- | --- | --- |
 | `Models.swift` | `Provider`, `Account`, `QuotaWindow`, alert and restart value types, `Version`, `Relative` | nothing (pure) |
 | `Auth.swift` | Credential parsers, the three CLIs' main login slots (`ClaudeMain`, `CodexMain`, `GrokMain`), the `Vault`, `Keychain` via `/usr/bin/security`, `Logins` (serialized scan and switch), `Log` | Keychain, `~/.claude.json`, `~/.codex`, `~/.grok` |
-| `Usage.swift` | `UsageClient` requests plus the pure `parseClaude` and `parseCodex`, `DebugLog` shape dumps | `api.anthropic.com`, `chatgpt.com` |
+| `Usage.swift` | `UsageClient` requests plus the pure `parseClaude`, `parseCodex` and `parseGrok`, `DebugLog` shape dumps | `api.anthropic.com`, `chatgpt.com`, `cli-chat-proxy.grok.com` |
 | `Alerts.swift` | Which notifications are due (pure), `Notifier` | UserNotifications |
 | `Sessions.swift` | Running CLI processes, host terminal detection, restart, `Terminal` launchers | `pgrep`, `ps`, `lsof`, cmux CLI, `open`, AppleScript |
 | `Store.swift` | UI state and orchestration (`@Observable`, main actor) | everything above |

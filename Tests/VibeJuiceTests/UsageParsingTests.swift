@@ -103,3 +103,50 @@ private func json(_ text: String) -> [String: Any] {
         #expect(UsageClient.parseCodex(json("{\"plan_type\": \"pro\"}"), fallbackPlan: nil, now: now).windows.isEmpty)
     }
 }
+
+@Suite struct GrokParsingTests {
+    @Test func weeklyWindowFromCreditsConfig() {
+        let r = UsageClient.parseGrok(json("""
+        {"config": {"creditUsagePercent": 37.5,
+                    "currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY", "start": "2026-09-01T10:09:18.512650+00:00", "end": "2026-09-08T10:09:18.512650+00:00"},
+                    "onDemandCap": {"val": 0}, "isUnifiedBillingUser": true}}
+        """))
+        #expect(r.windows.count == 1)
+        #expect(r.windows[0].id == "grok-week")
+        #expect(r.windows[0].label == "Weekly limit")
+        #expect(r.windows[0].usedPercent == 37.5)
+        #expect(r.windows[0].isWeekly)
+        let expected = ISO8601DateFormatter().date(from: "2026-09-08T10:09:18Z")!.addingTimeInterval(0.51265)
+        #expect(abs(r.windows[0].resetsAt!.timeIntervalSince(expected)) < 0.001)
+    }
+
+    @Test func missingPercentMeansZero() {
+        // The backend omits zero-valued proto fields, so a fresh period has no percent at all.
+        let r = UsageClient.parseGrok(json("""
+        {"config": {"currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY", "end": "2026-09-08T10:09:18Z"}, "billingPeriodEnd": "2026-09-08T10:09:18Z"}}
+        """))
+        #expect(r.windows.count == 1)
+        #expect(r.windows[0].usedPercent == 0)
+    }
+
+    @Test func monthlyLabelAndCentsFallback() {
+        let r = UsageClient.parseGrok(json("""
+        {"config": {"currentPeriod": {"type": "USAGE_PERIOD_TYPE_MONTHLY", "end": "2026-10-01T00:00:00Z"}, "monthlyLimit": {"val": 2000}, "used": {"val": 500}}}
+        """))
+        #expect(r.windows[0].id == "grok-month")
+        #expect(r.windows[0].label == "Monthly limit")
+        #expect(r.windows[0].usedPercent == 25)
+    }
+
+    @Test func emptyWithoutConfigOrPeriod() {
+        #expect(UsageClient.parseGrok(json("{}")).windows.isEmpty)
+        #expect(UsageClient.parseGrok(json("{\"config\": {\"onDemandCap\": {\"val\": 0}}}")).windows.isEmpty)
+    }
+
+    @Test func tierLabels() {
+        #expect(UsageClient.grokTierLabel("XPremium") == "X Premium")
+        #expect(UsageClient.grokTierLabel("SuperGrokHeavy") == "SuperGrok Heavy")
+        #expect(UsageClient.grokTierLabel("SuperGrok") == "SuperGrok")
+        #expect(UsageClient.grokTierLabel("") == nil)
+    }
+}

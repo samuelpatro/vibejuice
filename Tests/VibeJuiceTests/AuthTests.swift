@@ -115,3 +115,16 @@ private func jwt(_ claims: [String: Any]) -> String {
         #expect(Data(hex: "zz") == nil)
     }
 }
+
+@Suite struct GrokCredentialsTests {
+    @Test func readsFirstEntryWithKey() {
+        let payload = Data("""
+        {"https://auth.x.ai::client": {"key": "k1", "user_id": "u1", "email": "a@example.com", "first_name": "A", "expires_at": "2026-09-08T10:09:18.512650+00:00"}}
+        """.utf8)
+        let c = GrokCredentials(payload: payload)
+        #expect(c?.key == "k1")
+        #expect(c?.userId == "u1")
+        #expect(c?.email == "a@example.com")
+        #expect(c?.expiresAt != nil)
+    }
+}
