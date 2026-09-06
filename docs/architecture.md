@@ -21,7 +21,7 @@ One Swift package, one executable target, no dependencies. Files in `Sources/Vib
 
 **Time is a parameter.** `tokenMax(now:)`, `Alerts.*(now:)`, `Relative.text(to:now:)` and `parseCodex(now:)` take the clock, so the rules are tested at fixed instants.
 
-**Controls are tap targets, not `Button`s.** SwiftUI's button gesture crashes on macOS 26 inside a menu bar window when the label re-renders mid-press. `Pill` and `IconCircle` are views with `onTapGesture`; only `Menu` items are real buttons.
+**Controls are tap targets, not `Button`s.** SwiftUI's button gesture crashes on macOS 26 inside a menu bar window when the label re-renders mid-press. Every clickable thing gets the `tapTarget(label, shape:)` modifier, which supplies the hit area, the tap, keyboard focus with Return and Space, and the VoiceOver button trait and label in one place; only `Menu` items are real buttons. Reduce Motion pauses the refresh spinner and the notice animation, Increase Contrast strengthens the glass tint.
 
 **The refresh spinner drives itself.** `RefreshButton` is a `TimelineView` that reads `store.refreshing` every frame, so it starts and stops regardless of whether the popover re-renders.
 

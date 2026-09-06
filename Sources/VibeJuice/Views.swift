@@ -3,6 +3,7 @@ import SwiftUI
 struct PopoverView: View {
     @Environment(Store.self) private var store
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,10 +24,14 @@ struct PopoverView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if let r = store.pendingRestart {
                         Pill(text: "Restart \(r.sessions.count == 1 ? "session" : "\(r.sessions.count) sessions")", prominent: true)
-                            .onTapGesture { store.restartPendingSessions() }
-                        .help("Quits the running \(r.provider.tool) session\(r.sessions.count == 1 ? "" : "s") and reopens each one in its folder with \(r.provider.resumeCommand), signed in as \(r.account).")
+                            .tapTarget("Restart \(r.sessions.count) \(r.provider.tool) sessions as \(r.account)") { store.restartPendingSessions() }
+                            .help("Quits the running \(r.provider.tool) session\(r.sessions.count == 1 ? "" : "s") and reopens each one in its folder with \(r.provider.resumeCommand), signed in as \(r.account).")
                         Pill(text: "Later")
-                            .onTapGesture { store.dismissRestart() }
+                            .tapTarget("Keep the old sessions running") { store.dismissRestart() }
+                    }
+                    if let u = store.undoable {
+                        Pill(text: "Undo")
+                            .tapTarget("Restore \(u.displayName)") { store.undoForget() }
                     }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
@@ -37,7 +42,7 @@ struct PopoverView: View {
         .background(HoverEnabler())
         .containerBackground(.clear, for: .window)
         .background(.thinMaterial)
-        .animation(.easeOut(duration: 0.15), value: store.notice)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: store.notice)
     }
 
     private var footer: some View {
@@ -47,29 +52,32 @@ struct PopoverView: View {
                 .contentTransition(.opacity)
             if let u = store.update {
                 Pill(text: "\(u.version) is out")
-                    .onTapGesture { NSWorkspace.shared.open(u.url) }
+                    .tapTarget("Version \(u.version) is available, open the release page") { NSWorkspace.shared.open(u.url) }
                     .help("Opens the release page. Homebrew users: brew upgrade --cask vibejuice")
             }
             Spacer(minLength: 8)
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
                     RefreshButton()
-                        .onTapGesture { store.reload() }
-                        .help("Refresh")
+                        .tapTarget("Refresh usage", shape: AnyShape(Circle())) { store.reload() }
+                        .help("Refresh (⌘R)")
                     Menu {
                         Toggle("Auto-switch when limit is hit", isOn: Binding(get: { store.autoSwitch }, set: { store.autoSwitch = $0 }))
                         Toggle("Percent in menu bar", isOn: Binding(get: { store.showPercent }, set: { store.showPercent = $0 }))
                         Toggle("Launch at login", isOn: Binding(get: { store.launchAtLogin }, set: { store.setLaunchAtLogin($0) }))
                         Divider()
                         Button("Rescan logins") { store.reload() }
+                            .keyboardShortcut("r")
                         Divider()
                         Button("About VibeJuice") {
                             openWindow(id: "about")
                             NSApp.activate(ignoringOtherApps: true)
                         }
                         Button("Quit VibeJuice") { NSApp.terminate(nil) }
+                            .keyboardShortcut("q")
                     } label: {
                         IconCircle(systemName: "ellipsis")
+                            .accessibilityLabel("More")
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
@@ -97,9 +105,9 @@ struct ProviderSection: View {
                 GlassEffectContainer(spacing: 6) {
                     HStack(spacing: 6) {
                         Pill(text: "Open \(provider.tool)")
-                            .onTapGesture { store.open(provider) }
+                            .tapTarget("Open \(provider.tool) in a terminal") { store.open(provider) }
                         IconCircle(systemName: "plus", size: 24)
-                            .onTapGesture { store.addAccount(provider) }
+                            .tapTarget("Add \(provider.title) account", shape: AnyShape(Circle())) { store.addAccount(provider) }
                             .help("Add \(provider.title) account")
                     }
                 }
@@ -115,12 +123,21 @@ struct ProviderSection: View {
                     // A tap gesture, not a Button: the row label re-renders on hover, and SwiftUI's
                     // button gesture crashes on this OS when its label changes mid-press.
                     AccountRow(account: a)
-                        .contentShape(RoundedRectangle(cornerRadius: 8))
-                        .onTapGesture { store.activate(a) }
+                        .tapTarget(rowLabel(a), shape: AnyShape(RoundedRectangle(cornerRadius: 8))) { store.activate(a) }
                         .contextMenu { rowMenu(a) }
                 }
             }
         }
+    }
+
+    /// What VoiceOver reads for a row: who, plan, and the number that matters.
+    private func rowLabel(_ a: Account) -> String {
+        var parts = [a.displayName]
+        if let plan = a.plan { parts.append(plan) }
+        if let h = a.headroom { parts.append("\(Int(h.rounded())) percent left") }
+        if case .expired = a.status { parts.append("token expired") }
+        parts.append(a.isActive ? "active" : "switch to this account")
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -322,13 +339,14 @@ struct IconCircle: View {
     let systemName: String
     var size: CGFloat = 28
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: size * 0.42, weight: .medium))
             .frame(width: size, height: size)
             .contentShape(Circle())
-            .glassEffect(.regular.tint(GlassTint.lift(scheme)).interactive(), in: .circle)
+            .glassEffect(.regular.tint(GlassTint.lift(scheme, contrast: contrast)).interactive(), in: .circle)
     }
 }
 
@@ -341,20 +359,24 @@ struct RefreshButton: View {
     @Environment(Store.self) private var store
     var size: CGFloat = 28
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func angle(at date: Date) -> Double {
-        store.refreshing ? date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360 : 0
+        store.refreshing && !reduceMotion ? date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360 : 0
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+        // Under Reduce Motion the timeline pauses and the arrow just dims while a refresh runs.
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: size * 0.42, weight: .medium))
                 .rotationEffect(.degrees(angle(at: context.date)))
+                .opacity(reduceMotion && store.refreshing ? 0.4 : 1)
         }
         .frame(width: size, height: size)
         .contentShape(Circle())
-        .glassEffect(.regular.tint(GlassTint.lift(scheme)).interactive(), in: .circle)
+        .glassEffect(.regular.tint(GlassTint.lift(scheme, contrast: contrast)).interactive(), in: .circle)
     }
 }
 
@@ -409,6 +431,7 @@ struct Pill: View {
     let text: String
     var prominent = false
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Text(text)
@@ -416,14 +439,43 @@ struct Pill: View {
             .foregroundStyle(prominent ? Color.white : Color.primary)
             .padding(.horizontal, 10).frame(height: 24)
             .contentShape(Capsule())
-            .glassEffect(.regular.tint(prominent ? Color.accentColor : GlassTint.lift(scheme)).interactive(), in: .capsule)
+            .glassEffect(.regular.tint(prominent ? Color.accentColor : GlassTint.lift(scheme, contrast: contrast)).interactive(), in: .capsule)
     }
 }
 
 /// Plain glass sinks into the panel on a dark background. Native controls sit above it, so
-/// non-prominent controls get a light tint that reads as a button in both appearances.
+/// non-prominent controls get a light tint that reads as a button in both appearances, and a
+/// stronger one under Increase Contrast.
 enum GlassTint {
-    static func lift(_ scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color.white.opacity(0.14) : Color.white.opacity(0.6)
+    static func lift(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color {
+        let strong = contrast == .increased
+        return scheme == .dark ? Color.white.opacity(strong ? 0.28 : 0.14) : Color.white.opacity(strong ? 0.85 : 0.6)
+    }
+}
+
+/// Everything clickable in the popover, in one place: hit area, tap, keyboard focus with
+/// Return and Space, and VoiceOver button semantics. Not SwiftUI's `Button`: its gesture
+/// crashes on macOS 26 inside a menu bar window when the label re-renders mid-press.
+struct TapTarget: ViewModifier {
+    let label: String
+    let shape: AnyShape
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(shape)
+            .onTapGesture(perform: action)
+            .focusable()
+            .onKeyPress(.return) { action(); return .handled }
+            .onKeyPress(.space) { action(); return .handled }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(label)
+    }
+}
+
+extension View {
+    func tapTarget(_ label: String, shape: AnyShape = AnyShape(Capsule()), action: @escaping () -> Void) -> some View {
+        modifier(TapTarget(label: label, shape: shape, action: action))
     }
 }

@@ -130,6 +130,15 @@ enum Logins {
         }
     }
 
+    /// Vault edits go through the same queue so they never interleave with a scan.
+    static func forget(_ provider: Provider, email: String) {
+        queue.async { Vault.delete(provider, email: email) }
+    }
+
+    static func restore(_ provider: Provider, email: String, payload: Data) {
+        queue.async { Vault.save(provider, email: email, payload: payload) }
+    }
+
     static func scanNow() -> Scan {
         Log.line("reload start")
         var active: [Provider: String] = [:]

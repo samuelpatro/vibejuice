@@ -25,6 +25,8 @@ final class Store {
     var update: Update?
     /// Whether this app is registered as a login item. Stored so the menu toggle updates.
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    /// The login most recently forgotten, kept while its notice is up so it can be restored.
+    var undoable: Account?
 
     struct Update { let version: String; let url: URL }
 
@@ -175,6 +177,7 @@ final class Store {
     func dismissRestart() {
         pendingRestart = nil
         notice = nil
+        undoable = nil
     }
 
     func restartPendingSessions() {
@@ -200,11 +203,20 @@ final class Store {
         }
     }
 
+    /// Removes a saved login. Undoable while the notice is up, so no confirmation dialog.
     func forget(_ account: Account) {
         guard !account.isActive else { show("Sign in to another account first, then forget this one."); return }
         accounts.removeAll { $0.id == account.id }
-        Task.detached { Vault.delete(account.provider, email: account.email) }
+        Logins.forget(account.provider, email: account.email)
         show("Forgot \(account.displayName).")
+        undoable = account
+    }
+
+    func undoForget() {
+        guard let account = undoable else { return }
+        Logins.restore(account.provider, email: account.email, payload: account.payload)
+        accounts.append(account)
+        show("Restored \(account.displayName).")
     }
 
     func consumeReset(_ account: Account) async {
@@ -266,11 +278,12 @@ final class Store {
 
     func show(_ text: String) {
         notice = text
+        undoable = nil
         noticeTask?.cancel()
         noticeTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 6_000_000_000)
             // Keep the notice up while a restart offer is attached to it.
-            if !Task.isCancelled && pendingRestart == nil { notice = nil }
+            if !Task.isCancelled && pendingRestart == nil { notice = nil; undoable = nil }
         }
     }
 }
