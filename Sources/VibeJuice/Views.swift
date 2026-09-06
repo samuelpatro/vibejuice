@@ -40,8 +40,10 @@ struct PopoverView: View {
         }
         .frame(width: 440)
         .background(HoverEnabler())
+        // The panel is Liquid Glass over the desktop, like Control Center, not a blurred material.
+        // Increase Contrast and Reduce Transparency get a solid material instead.
         .containerBackground(.clear, for: .window)
-        .background(.thinMaterial)
+        .modifier(PanelGlass())
         .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: store.notice)
     }
 
@@ -440,6 +442,22 @@ struct Pill: View {
             .padding(.horizontal, 10).frame(height: 24)
             .contentShape(Capsule())
             .glassControl(.capsule, prominent: prominent)
+    }
+}
+
+/// The popover's surface. Regular Liquid Glass shows the wallpaper through it with the system's
+/// edge lighting; text stays legible thanks to the glass's own adaptive tint plus a light wash.
+struct PanelGlass: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if contrast == .increased || reduceTransparency {
+            content.background(.regularMaterial)
+        } else {
+            content.glassEffect(.regular.tint(scheme == .dark ? Color.black.opacity(0.18) : Color.white.opacity(0.35)), in: .rect)
+        }
     }
 }
 

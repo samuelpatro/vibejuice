@@ -22,6 +22,8 @@ One Swift package, one executable target, no dependencies. Files in `Sources/Vib
 
 **Time is a parameter.** `tokenMax(now:)`, `Alerts.*(now:)`, `Relative.text(to:now:)` and `parseCodex(now:)` take the clock, so the rules are tested at fixed instants.
 
+**The panel is Liquid Glass, not a material.** `PanelGlass` puts one regular `glassEffect` over a clear window so the desktop refracts through like Control Center; Increase Contrast and Reduce Transparency swap in a solid material. Controls are interactive glass with a hairline rim (`GlassControl`), row highlights are plain tinted shapes.
+
 **Controls are tap targets, not `Button`s.** SwiftUI's button gesture crashes on macOS 26 inside a menu bar window when the label re-renders mid-press. Every clickable thing gets the `tapTarget(label, shape:)` modifier, which supplies the hit area, the tap, and the VoiceOver button trait and label in one place; only `Menu` items are real buttons. Controls are deliberately not focusable: a menu bar popover is not a tabbable surface, and focus would land on the first control every time it opens. Reduce Motion pauses the refresh spinner and the notice animation, Increase Contrast strengthens the glass tint.
 
 **Usage endpoints are not hammered.** Automatic refreshes (launch, timer, wake) skip accounts fetched within the last minute; only a click forces one. A 429 keeps the last good meters rather than blanking the row.
