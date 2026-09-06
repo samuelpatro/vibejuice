@@ -4,7 +4,7 @@
 
 <p align="center">Switch Claude Code, Codex and Grok accounts in one click. Keep coding.</p>
 
-<p align="center"><img src="docs/preview.png" width="488" alt="VibeJuice popover in the menu bar"></p>
+<p align="center"><img src="docs/preview.png" width="618" alt="VibeJuice popover in the menu bar"></p>
 
 VibeJuice is a menu bar switcher for your AI coding accounts. When the account you are on runs out of juice, pick another one and keep going. No sign-out, no `/login` dance, no config editing. Every new `claude`, `codex` or `grok` you start uses the account you picked, exactly as if you had logged in with it.
 
