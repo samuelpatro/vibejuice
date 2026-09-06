@@ -16,6 +16,7 @@ enum UsageClient {
     private static let session: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 15
+        cfg.timeoutIntervalForResource = 30
         return URLSession(configuration: cfg)
     }()
 

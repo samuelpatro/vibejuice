@@ -26,10 +26,14 @@ final class Store: ObservableObject {
     private var timer: Timer?
     private var updateTimer: Timer?
     private var noticeTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
 
     init() {
         reload()
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.reload() }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
         Task { await checkForUpdate() }
@@ -124,17 +128,26 @@ final class Store: ObservableObject {
         Task { await refreshAll() }
     }
 
+    /// A new refresh cancels one still in flight, so a request that hangs (typically across
+    /// sleep) can never block later refreshes.
     func refreshAll() async {
-        guard !refreshing else { return }
-        refreshing = true
-        await withTaskGroup(of: Void.self) { group in
-            for a in accounts { group.addTask { await self.refresh(a.id) } }
+        refreshTask?.cancel()
+        let task = Task { @MainActor in
+            refreshing = true
+            Log.line("refresh start accounts=\(accounts.count)")
+            await withTaskGroup(of: Void.self) { group in
+                for a in accounts { group.addTask { await self.refresh(a.id) } }
+            }
+            guard !Task.isCancelled else { return }
+            refreshing = false
+            lastRefresh = Date()
+            Log.line("refresh done")
+            if autoSwitch { autoSwitchIfNeeded() }
+            notifyTokenMax()
+            notifyLowQuota()
         }
-        refreshing = false
-        lastRefresh = Date()
-        if autoSwitch { autoSwitchIfNeeded() }
-        notifyTokenMax()
-        notifyLowQuota()
+        refreshTask = task
+        await task.value
     }
 
     /// One notification per active account per window when its headroom drops under 10%.
@@ -187,6 +200,7 @@ final class Store: ObservableObject {
             update(id) { $0.status = (creds.expiresAt.map { $0 < Date() } ?? false) ? .expired : .noData; $0.updatedAt = Date() }
             return
         }
+        guard !Task.isCancelled else { return }
         update(id) { a in
             switch result {
             case .success(let r):
