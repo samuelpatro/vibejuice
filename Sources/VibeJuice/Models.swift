@@ -17,6 +17,10 @@ enum Provider: String, CaseIterable, Identifiable, Codable {
     }
     /// Providers without a known usage endpoint show accounts and switching only.
     var hasUsage: Bool { self != .grok }
+    /// Claude Code checks its credential store before each request and adopts a changed login on
+    /// its own (Claude Code 2.1.261: the change check clears the cached credentials when the
+    /// Keychain item differs). Codex refuses to adopt a different account mid-session; Grok unknown.
+    var adoptsLoginLive: Bool { self == .claude }
     /// Reopens the most recent session in the current folder after a restart.
     var resumeCommand: String {
         switch self { case .claude: "claude --continue"; case .codex: "codex resume --last"; case .grok: "grok --continue" }

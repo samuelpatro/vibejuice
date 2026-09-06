@@ -58,7 +58,7 @@ The workflow needs one secret, `TAP_TOKEN`, a fine-grained token with Contents r
 
 The account currently signed in to each CLI is picked up automatically. To add another one, press **+** in its section. Terminal opens with `claude auth login` or `codex login`, you sign in, and on the next refresh the new login sits next to the old one.
 
-Click a row to switch. Sessions already running keep their old account, so VibeJuice offers to restart them: each one is closed and reopened with its resume command, in the folder and the terminal it was running in (cmux, Ghostty, iTerm or Terminal). Right-click a row to refresh it, spend a Codex manual reset, or forget it.
+Click a row to switch. Running Claude Code sessions pick up the new account on their next request, since Claude Code checks its credential store before each call. Codex and Grok sessions keep the account they started with, so VibeJuice offers to restart them: each one is closed and reopened with its resume command, in the folder and the terminal it was running in (cmux, Ghostty, iTerm or Terminal). Right-click a row to refresh it, spend a Codex manual reset, or forget it.
 
 **Auto-switch** (in the … menu) moves to the account with the most headroom as soon as the active one hits a limit, and posts a notification. Independently of that, one notification goes out when an active account drops under 10% on any window.
 

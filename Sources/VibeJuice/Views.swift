@@ -3,6 +3,7 @@ import SwiftUI
 struct PopoverView: View {
     @EnvironmentObject var store: Store
     @Environment(\.openWindow) private var openWindow
+    @State private var spin = 0.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,8 +43,9 @@ struct PopoverView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Text(store.lastRefresh.map { "Updated \(Relative.text(from: $0))" } ?? "Loading…")
+            Text(store.refreshing ? "Refreshing…" : store.lastRefresh.map { "Updated \(Relative.text(from: $0))" } ?? "Loading…")
                 .font(.caption).foregroundStyle(.secondary)
+                .contentTransition(.opacity)
             if let u = store.update {
                 Pill(text: "\(u.version) is out")
                     .onTapGesture { NSWorkspace.shared.open(u.url) }
@@ -53,9 +55,13 @@ struct PopoverView: View {
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
                     IconCircle(systemName: "arrow.clockwise")
-                        .rotationEffect(.degrees(store.refreshing ? 360 : 0))
-                        .animation(store.refreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: store.refreshing)
-                        .onTapGesture { store.reload() }
+                        .rotationEffect(.degrees(spin))
+                        .onTapGesture {
+                            // One full turn per tap, so the click always answers even when the
+                            // refresh finishes in a blink.
+                            withAnimation(.easeInOut(duration: 0.7)) { spin += 360 }
+                            store.reload()
+                        }
                         .help("Refresh")
                     Menu {
                         Toggle("Auto-switch when limit is hit", isOn: $store.autoSwitch)

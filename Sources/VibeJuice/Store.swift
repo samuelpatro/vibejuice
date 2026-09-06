@@ -224,8 +224,9 @@ final class Store: ObservableObject {
 
     // MARK: Switching
 
-    /// Same effect as running /login and picking this account: the main login changes,
-    /// every new `claude` / `codex` uses it. Running sessions keep theirs until restarted.
+    /// Same effect as running /login and picking this account: the main login changes and
+    /// every new `claude` / `codex` uses it. Claude Code sessions pick it up live; Codex and
+    /// Grok sessions keep theirs until restarted.
     func activate(_ account: Account) {
         guard !account.isActive else { return }
         // Save the live state of the account we're leaving; the CLI may have refreshed its token.
@@ -246,10 +247,12 @@ final class Store: ObservableObject {
             return
         }
         reload()
-        let running = runningSessionList(account.provider)
+        let running = account.provider.adoptsLoginLive ? [] : runningSessionList(account.provider)
         pendingRestart = running.isEmpty ? nil : PendingRestart(provider: account.provider, account: account.displayName, sessions: running)
-        show("\(account.provider.tool) is now signed in as \(account.displayName)."
-             + (running.isEmpty ? "" : " \(running.count) running session\(running.count == 1 ? "" : "s") still use the old account."))
+        let tail = account.provider.adoptsLoginLive
+            ? " Running sessions switch on their next request."
+            : running.isEmpty ? "" : " \(running.count) running session\(running.count == 1 ? "" : "s") still use the old account."
+        show("\(account.provider.tool) is now signed in as \(account.displayName).\(tail)")
     }
 
     /// Quits the sessions that predate the switch and reopens each one in its folder with the
@@ -285,7 +288,8 @@ final class Store: ObservableObject {
             guard let best = candidates.max(by: { ($0.headroom ?? 0) < ($1.headroom ?? 0) }) else { continue }
             activate(best)
             Notifier.post(title: "\(p.tool) switched account",
-                          body: "\(current.displayName) hit its limit. Signed in as \(best.displayName). Restart open sessions to pick it up.")
+                          body: "\(current.displayName) hit its limit. Signed in as \(best.displayName)."
+                                + (p.adoptsLoginLive ? "" : " Restart open sessions to pick it up."))
         }
     }
 
