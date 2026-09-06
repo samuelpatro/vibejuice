@@ -150,3 +150,16 @@ private func json(_ text: String) -> [String: Any] {
         #expect(UsageClient.grokTierLabel("") == nil)
     }
 }
+
+@Suite struct RedactionTests {
+    @Test func maskedValuesNeverReachTheShapeLog() {
+        let out = DebugLog.redactedForTest(["email": "someone@example.com", "token": "sk-ant-oat01-abcdefghijklmnopqrstuvwxyz",
+                                               "kind": "weekly_all", "id": "1234-5678", "n": 3, "nested": ["plan": "max"]]) as! [String: Any]
+        #expect(out["email"] as? String == "<string 19>")
+        #expect((out["token"] as? String)?.hasPrefix("<string") == true)
+        #expect(out["kind"] as? String == "weekly_all")
+        #expect(out["id"] as? String == "<string 9>")
+        #expect(out["n"] as? Int == 3)
+        #expect((out["nested"] as? [String: Any])?["plan"] as? String == "max")
+    }
+}

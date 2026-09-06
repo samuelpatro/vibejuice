@@ -123,3 +123,47 @@ private func account(_ provider: Provider = .claude, _ email: String = "a@b.c", 
         #expect(window("s", "Session", used: 25).leftPercent == 75)
     }
 }
+
+private func acct(_ p: Provider, _ email: String, used: Double? = nil, active: Bool = false, updated: Date? = nil) -> Account {
+    var a = Account(provider: p, email: email, payload: Data())
+    a.isActive = active
+    a.updatedAt = updated
+    if let used { a.status = .ok([QuotaWindow(id: "w", label: "Week", usedPercent: used, resetsAt: nil, secondary: false)]) }
+    return a
+}
+
+@Suite struct VisibleProvidersTests {
+    @Test func installedOrLoggedInShow() {
+        #expect(Provider.visible(installed: [.claude], accounts: [acct(.grok, "g")]) == [.claude, .grok])
+        #expect(Provider.visible(installed: [.claude, .codex, .grok], accounts: []) == Provider.allCases)
+    }
+
+    @Test func nothingAtAllShowsEverythingSoSignInIsPossible() {
+        #expect(Provider.visible(installed: [], accounts: []) == Provider.allCases)
+    }
+}
+
+@Suite struct AutoSwitchTests {
+    @Test func movesFromSpentActiveToMostHeadroom() {
+        let move = AutoSwitch.move(among: [acct(.claude, "a", used: 100, active: true), acct(.claude, "b", used: 60), acct(.claude, "c", used: 20)])
+        #expect(move?.from.email == "a")
+        #expect(move?.to.email == "c")
+    }
+
+    @Test func staysPutWhenActiveHasHeadroomOrNobodyElseDoes() {
+        #expect(AutoSwitch.move(among: [acct(.claude, "a", used: 50, active: true), acct(.claude, "b", used: 0)]) == nil)
+        #expect(AutoSwitch.move(among: [acct(.claude, "a", used: 100, active: true), acct(.claude, "b", used: 100)]) == nil)
+        #expect(AutoSwitch.move(among: [acct(.claude, "a", used: 100, active: true), acct(.claude, "b")]) == nil)
+    }
+}
+
+@Suite struct RefreshThrottleTests {
+    @Test func automaticPassSkipsRecentlyFetched() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let fresh = acct(.claude, "fresh", updated: now.addingTimeInterval(-10))
+        let stale = acct(.claude, "stale", updated: now.addingTimeInterval(-120))
+        let never = acct(.claude, "never")
+        #expect(Store.due([fresh, stale, never], force: false, now: now).map(\.email) == ["stale", "never"])
+        #expect(Store.due([fresh, stale, never], force: true, now: now).count == 3)
+    }
+}

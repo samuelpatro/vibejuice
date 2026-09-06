@@ -30,11 +30,8 @@ private func jwt(_ claims: [String: Any]) -> String {
     }
 
     @Test func keychainAccountMatchesCodexDerivation() {
-        let home = URL(fileURLWithPath: "/tmp")
-        let canonical = home.resolvingSymlinksInPath().path
-        let hex = SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
-        #expect(CodexMain.keychainAccount(forHome: home) == "cli|" + hex.prefix(16))
-        #expect(CodexMain.keychainAccount(forHome: home).count == 4 + 16)
+        // Foundation leaves /tmp alone (only deeper symlinks resolve); sha256("/tmp") starts with e9671acd244849c5.
+        #expect(CodexMain.keychainAccount(forHome: URL(fileURLWithPath: "/tmp")) == "cli|e9671acd244849c5")
     }
 }
 
@@ -144,5 +141,30 @@ private func jwt(_ claims: [String: Any]) -> String {
         #expect(!TokenRefresh.arguments.contains("--bare"))
         #expect(TokenRefresh.arguments.contains("-p"))
         #expect(TokenRefresh.arguments.contains("haiku"))
+    }
+}
+
+@Suite struct KeychainQuotingTests {
+    @Test func quotedEscapesForSecurityInteractiveMode() {
+        #expect(Keychain.quoted("plain") == "\"plain\"")
+        #expect(Keychain.quoted("{\"a\":\"b\"}") == "\"{\\\"a\\\":\\\"b\\\"}\"")
+        #expect(Keychain.quoted("back\\slash") == "\"back\\\\slash\"")
+    }
+}
+
+@Suite struct KeychainSingleLineTests {
+    @Test func prettyJSONBecomesOneLineAndOtherTextIsUntouched() {
+        let flat = Keychain.singleLine("{\n  \"a\": [1, 2],\n  \"b\": \"x\\ny\"\n}")
+        #expect(!flat.contains("\n"))
+        #expect((try? JSONSerialization.jsonObject(with: Data(flat.utf8)) as? [String: Any])?["b"] as? String == "x\ny")
+        #expect(Keychain.singleLine("{\"a\":1}") == "{\"a\":1}")
+        #expect(Keychain.singleLine("not json\nat all") == "not json\nat all")
+    }
+}
+
+@Suite struct KeychainLineLimitTests {
+    @Test func limitLeavesRoomBelowSecuritysBuffer() {
+        #expect(Keychain.interactiveLineLimit < 4028)
+        #expect(Keychain.interactiveLineLimit > 2000)
     }
 }

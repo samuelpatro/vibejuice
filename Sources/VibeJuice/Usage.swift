@@ -6,14 +6,23 @@ struct UsageResult {
     var manualResets: Int?
 }
 
-enum UsageError: Error {
+enum UsageError: Error, CustomStringConvertible {
     case unauthorized
+    /// Status code plus the first bytes of the body, for the debugger; the body never reaches the log.
     case http(Int, String)
     case badPayload
+
+    var description: String {
+        switch self {
+        case .unauthorized: "unauthorized"
+        case .http(let code, _): "http \(code)"
+        case .badPayload: "bad payload"
+        }
+    }
 }
 
 enum UsageClient {
-    private static let session: URLSession = {
+    static let session: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 15
         cfg.timeoutIntervalForResource = 30
@@ -274,6 +283,8 @@ enum UsageClient {
 /// Writes the *shape* of a JSON payload (keys, value types, numbers and short enums; never
 /// tokens or ids) to ~/Library/Logs/VibeJuice so undocumented endpoints can be mapped.
 enum DebugLog {
+    static func redactedForTest(_ v: Any) -> Any { redact(v) }
+
     static func shape(_ name: String, _ json: Any) {
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/VibeJuice")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -281,7 +292,7 @@ enum DebugLog {
         try? data.write(to: dir.appendingPathComponent("\(name).json"), options: .atomic)
     }
 
-    private static func redact(_ v: Any) -> Any {
+    static func redact(_ v: Any) -> Any {
         switch v {
         case let d as [String: Any]: return d.mapValues { redact($0) }
         case let a as [Any]: return a.map { redact($0) }

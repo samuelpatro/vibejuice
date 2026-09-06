@@ -41,7 +41,7 @@ scripts/make-signing-cert.sh   # once: self-signed identity so Keychain permissi
 scripts/bundle.sh              # builds build/VibeJuice.app and opens it
 ```
 
-The app sits in the menu bar as a small glass. Its fill level is the headroom of your active accounts, and a bolt joins it when a weekly window with unused quota is about to reset. The … menu has toggles for launch at login and for showing the percent next to the glass. When a newer release is out, the footer shows it with a link.
+The app sits in the menu bar as a small glass. Inside it, one colored band per provider (Claude orange, Codex green, Grok blue) is filled to that active account's headroom, and a bolt joins it when a weekly window with unused quota is about to reset. The … menu has toggles for launch at login and for showing the percent next to the glass. When a newer release is out, the footer shows it with a link.
 
 ## Release
 
@@ -67,7 +67,7 @@ Click a row to switch. Running Claude Code sessions pick up the new account on t
 - **Claude**: the same windows `/usage` prints. Session is the 5-hour limit, Week is all models, and the model-scoped week is labeled with the model name Anthropic reports. Percent is used, the row shows how much is left.
 - **Codex**: the weekly limit, the plan (Pro 5x, Pro 20x, Plus, Team), the renewal date, and how many manual resets remain. The login is read from `auth.json`, or from the Keychain when `cli_auth_credentials_store` is `keyring` or `auto` in `~/.codex/config.toml`. In that case macOS may ask once whether `security` may read the "Codex Auth" item; choose Always Allow.
 - **Grok**: the weekly (or monthly) limit and the reset time that Grok Build's `/usage` prints, plus the subscription tier (SuperGrok, X Premium). Same proxy calls as the CLI, which is open source.
-- Tokens are refreshed by the CLIs, never by VibeJuice. When a Claude account's token has expired, VibeJuice runs one minimal headless Claude Code request as that account (a staged config directory for inactive logins, the real one for the active login), so Claude Code renews the token itself, then reads the result back. This costs one tiny Haiku message from that account. Right-click a row for "Refresh token" to trigger it by hand. Codex and Grok tokens still refresh only when their CLI runs as that account.
+- Tokens are refreshed by the CLIs, never by VibeJuice. When a Claude account's token has expired, VibeJuice runs one minimal headless Claude Code request as that account (a throwaway config directory either way; for the active login it is pointed at Claude Code's real credential store), so Claude Code renews the token itself, then reads the result back. This costs one tiny Haiku message from that account. Right-click a row for "Refresh token" to trigger it by hand. Codex and Grok tokens still refresh only when their CLI runs as that account.
 
 ## Development
 

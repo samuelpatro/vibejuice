@@ -31,13 +31,14 @@ final class Store {
     struct Update { let version: String; let url: URL }
 
     /// Automatic refreshes leave an account alone this long after its last fetch.
-    static let minRefreshAge: TimeInterval = 60
+    nonisolated static let minRefreshAge: TimeInterval = 60
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var updateTimer: Timer?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
 
     init() {
+        TokenRefresh.sweep()
         reload()
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.reload() }
@@ -63,10 +64,7 @@ final class Store {
 
     /// Sections worth showing: a provider with a saved login or an installed CLI. With none of
     /// either, all three stay visible so there is still a way to sign in.
-    var visibleProviders: [Provider] {
-        let shown = Provider.allCases.filter { installed.contains($0) || !accounts(for: $0).isEmpty }
-        return shown.isEmpty ? Provider.allCases : shown
-    }
+    var visibleProviders: [Provider] { Provider.visible(installed: installed, accounts: accounts) }
 
     func activeAccount(for provider: Provider) -> Account? {
         accounts.first { $0.provider == provider && $0.isActive }
@@ -104,18 +102,32 @@ final class Store {
     /// is always cleared on exit, so the flag (and the spinner it drives) can never stick. Each
     /// request has a 30-second resource timeout, so this cannot hang across sleep.
     func refreshAll(force: Bool = false) async {
-        guard !refreshing else { return }
+        // A call during a running pass is not dropped: it is folded into one more pass afterwards,
+        // so a click during the timer's refresh, or the refresh after an auto-switch, still lands.
+        if refreshing { pendingPass = (pendingPass ?? false) || force; return }
         refreshing = true
         defer { refreshing = false }
-        let due = accounts.filter { force || ($0.updatedAt.map { Date().timeIntervalSince($0) } ?? .infinity) >= Store.minRefreshAge }
-        Log.line("refresh start accounts=\(due.count)/\(accounts.count)")
-        await withTaskGroup(of: Void.self) { group in
-            for a in due { group.addTask { await self.refresh(a.id) } }
-        }
-        lastRefresh = Date()
-        Log.line("refresh done")
-        if autoSwitch { autoSwitchIfNeeded() }
-        sendAlerts()
+        var force = force
+        repeat {
+            pendingPass = nil
+            let due = Store.due(accounts, force: force)
+            Log.line("refresh start accounts=\(due.count)/\(accounts.count)")
+            await withTaskGroup(of: Void.self) { group in
+                for a in due { group.addTask { await self.refresh(a.id) } }
+            }
+            lastRefresh = Date()
+            Log.line("refresh done")
+            if autoSwitch { autoSwitchIfNeeded() }
+            sendAlerts()
+            force = pendingPass ?? false
+        } while pendingPass != nil
+    }
+
+    @ObservationIgnored private var pendingPass: Bool?
+
+    /// Accounts an automatic pass fetches: everything not refreshed within `minRefreshAge`.
+    nonisolated static func due(_ accounts: [Account], force: Bool, now: Date = Date()) -> [Account] {
+        accounts.filter { force || ($0.updatedAt.map { now.timeIntervalSince($0) } ?? .infinity) >= minRefreshAge }
     }
 
     /// Posts the notifications that are due and records them so each goes out once.
@@ -188,25 +200,23 @@ final class Store {
         Log.line("token refresh start active=\(account.isActive)")
         let payload = account.payload, active = account.isActive
         Task {
-            let outcome: Result<Data?, Error> = await Task.detached {
-                do {
-                    if active { try TokenRefresh.claudeActive(payload: payload); return .success(nil) }
-                    return .success(try TokenRefresh.claude(payload: payload))
-                } catch { return .failure(error) }
-            }.value
-            renewing.remove(id)
-            switch outcome {
-            case .success(let fresh):
-                if let fresh {
-                    Logins.restore(account.provider, email: account.email, payload: fresh)
+            defer { renewing.remove(id) }
+            do {
+                if active {
+                    try await TokenRefresh.claudeActive(payload: payload, accountId: id)
+                } else {
+                    let fresh = try await TokenRefresh.claude(payload: payload, accountId: id)
+                    // Forgotten while renewing: do not put it back.
+                    guard accounts.contains(where: { $0.id == id }) else { return }
+                    try await Logins.restore(account.provider, email: account.email, payload: fresh)
                     update(id) { $0.payload = fresh; $0.status = .loading }
                 }
                 await rescan()
                 await refresh(id)
-            case .failure(let e):
-                Log.line("token refresh failed: \(e)")
+            } catch {
+                Log.line("token refresh failed: \(error)")
                 update(id) { $0.status = .expired }
-                show("Couldn't refresh \(account.displayName): \(e.localizedDescription)")
+                show("Couldn't refresh \(account.displayName): \(error.localizedDescription)")
             }
         }
     }
@@ -249,7 +259,7 @@ final class Store {
         pendingRestart = nil
         noticeTask?.cancel(); notice = nil
         Task {
-            await Sessions.restart(pending)
+            await Task.detached { await Sessions.restart(pending) }.value
             show("Restarted \(pending.sessions.count) \(pending.provider.tool) session\(pending.sessions.count == 1 ? "" : "s") as \(pending.account).")
         }
     }
@@ -257,9 +267,7 @@ final class Store {
     /// When the active account is spent, move to the account with the most headroom.
     func autoSwitchIfNeeded() {
         for p in Provider.allCases {
-            guard let current = activeAccount(for: p), current.spent else { continue }
-            let candidates = accounts(for: p).filter { !$0.spent && $0.headroom != nil && $0.id != current.id }
-            guard let best = candidates.max(by: { ($0.headroom ?? 0) < ($1.headroom ?? 0) }) else { continue }
+            guard let (current, best) = AutoSwitch.move(among: accounts(for: p)) else { continue }
             activate(best)
             Notifier.post(title: "\(p.tool) switched account",
                           body: "\(current.displayName) hit its limit. Signed in as \(best.displayName)."
@@ -271,16 +279,25 @@ final class Store {
     func forget(_ account: Account) {
         guard !account.isActive else { show("Sign in to another account first, then forget this one."); return }
         accounts.removeAll { $0.id == account.id }
-        Logins.forget(account.provider, email: account.email)
         show("Forgot \(account.displayName).")
         undoable = account
+        Task {
+            do { try await Logins.forget(account.provider, email: account.email) }
+            catch {
+                accounts.append(account); undoable = nil
+                show("Couldn't forget \(account.displayName): \(error.localizedDescription)")
+            }
+        }
     }
 
     func undoForget() {
         guard let account = undoable else { return }
-        Logins.restore(account.provider, email: account.email, payload: account.payload)
         accounts.append(account)
         show("Restored \(account.displayName).")
+        Task {
+            do { try await Logins.restore(account.provider, email: account.email, payload: account.payload) }
+            catch { show("Couldn't restore \(account.displayName): \(error.localizedDescription)") }
+        }
     }
 
     func consumeReset(_ account: Account) async {
@@ -300,12 +317,12 @@ final class Store {
     /// The next reload captures the new account into the vault automatically.
     func addAccount(_ provider: Provider) {
         reload()
-        Terminal.run(provider.loginCommand, cwd: NSHomeDirectory())
+        Task.detached { Terminal.run(provider.loginCommand, cwd: NSHomeDirectory()) }
         show("Sign in to the other \(provider.title) account in the terminal, then hit refresh here.")
     }
 
     func open(_ provider: Provider) {
-        Terminal.run(provider.binary, cwd: NSHomeDirectory())
+        Task.detached { Terminal.run(provider.binary, cwd: NSHomeDirectory()) }
     }
 
     // MARK: Launch at login
@@ -329,7 +346,7 @@ final class Store {
               current.first?.isNumber == true else { return }
         var req = URLRequest(url: URL(string: "https://api.github.com/repos/samuelpatro/vibejuice/releases/latest")!)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
+        guard let (data, _) = try? await UsageClient.session.data(for: req),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tag = json["tag_name"] as? String,
               let page = (json["html_url"] as? String).flatMap(URL.init) else { return }

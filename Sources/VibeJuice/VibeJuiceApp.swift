@@ -39,8 +39,8 @@ struct VibeJuiceApp: App {
     private let debugWindow = ProcessInfo.processInfo.environment["VIBEJUICE_DEBUG_WINDOW"] != nil
 }
 
-/// The app icon's glass as a template image. Its fill level is the smallest headroom among the
-/// active accounts, and a bolt joins it while unused weekly quota is about to reset (tokenmax).
+/// The app icon's glass, drawn as a color image with one band per provider filled to that active
+/// account's headroom, and a bolt while unused weekly quota is about to reset (tokenmax).
 /// MenuBarExtra labels only draw text and images, so everything is baked into one image.
 struct MenuBarLabel: View {
     var store: Store
@@ -140,14 +140,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Writes the signal and a symbolized stack to the app log on a crash. This Mac keeps no crash
-/// reports, so this is the only trace a crash leaves.
+/// Writes the signal and a backtrace to the app log on a crash. This Mac keeps no crash
+/// reports, so this is the only trace a crash leaves. Only async-signal-safe calls: the file is
+/// opened up front and the handler uses write(2) and backtrace_symbols_fd, never Foundation.
 enum CrashLog {
+    private static var fd: Int32 = -1
+    private static let frames = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 64)
+
     static func install() {
+        fd = open(Log.file.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
         for sig in [SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGFPE] {
             signal(sig) { s in
-                Log.line("CRASH signal \(s)")
-                for line in Thread.callStackSymbols.prefix(25) { Log.line("  \(line)") }
+                if CrashLog.fd >= 0 {
+                    var msg: [UInt8] = Array("CRASH signal ".utf8) + Array(String(s).utf8) + [10]
+                    _ = msg.withUnsafeMutableBytes { write(CrashLog.fd, $0.baseAddress, $0.count) }
+                    let n = backtrace(CrashLog.frames, 64)
+                    backtrace_symbols_fd(CrashLog.frames, n, CrashLog.fd)
+                }
                 signal(s, SIG_DFL)
                 raise(s)
             }

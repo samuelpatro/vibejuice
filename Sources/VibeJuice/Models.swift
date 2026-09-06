@@ -25,6 +25,25 @@ enum Provider: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+extension Provider {
+    /// Sections worth showing: a provider with a saved login or an installed CLI. With none of
+    /// either, all three stay visible so there is still a way to sign in.
+    static func visible(installed: Set<Provider>, accounts: [Account]) -> [Provider] {
+        let shown = allCases.filter { p in installed.contains(p) || accounts.contains { $0.provider == p } }
+        return shown.isEmpty ? allCases : shown
+    }
+}
+
+/// When the active account is spent, the account with the most headroom takes over.
+enum AutoSwitch {
+    static func move(among accounts: [Account]) -> (from: Account, to: Account)? {
+        guard let current = accounts.first(where: \.isActive), current.spent else { return nil }
+        let candidates = accounts.filter { !$0.spent && $0.headroom != nil && $0.id != current.id }
+        guard let best = candidates.max(by: { ($0.headroom ?? 0) < ($1.headroom ?? 0) }) else { return nil }
+        return (current, best)
+    }
+}
+
 struct RunningSession: Identifiable, Sendable {
     let pid: Int32
     let cwd: String
@@ -62,7 +81,6 @@ struct TokenMaxNudge {
 enum AccountStatus {
     case loading
     case ok([QuotaWindow])
-    case noData
     case expired
     /// Claude Code is being run to refresh the expired token.
     case renewing

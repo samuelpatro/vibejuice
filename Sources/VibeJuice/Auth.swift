@@ -126,19 +126,28 @@ enum Logins {
     static func activate(_ provider: Provider, payload: Data) async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             queue.async {
-                if let main = readMain(provider) { Vault.save(provider, email: main.email, payload: main.payload) }
-                do { try writeMain(provider, payload); c.resume() } catch { c.resume(throwing: error) }
+                do {
+                    // If the snapshot fails the switch is aborted: overwriting the slot would lose
+                    // the newest token of the login being left.
+                    if let main = readMain(provider) { try Vault.save(provider, email: main.email, payload: main.payload) }
+                    try writeMain(provider, payload)
+                    c.resume()
+                } catch { c.resume(throwing: error) }
             }
         }
     }
 
     /// Vault edits go through the same queue so they never interleave with a scan.
-    static func forget(_ provider: Provider, email: String) {
-        queue.async { Vault.delete(provider, email: email) }
+    static func forget(_ provider: Provider, email: String) async throws {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            queue.async { c.resume(with: Result { try Vault.delete(provider, email: email) }) }
+        }
     }
 
-    static func restore(_ provider: Provider, email: String, payload: Data) {
-        queue.async { Vault.save(provider, email: email, payload: payload) }
+    static func restore(_ provider: Provider, email: String, payload: Data) async throws {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            queue.async { c.resume(with: Result { try Vault.save(provider, email: email, payload: payload) }) }
+        }
     }
 
     static func scanNow() -> Scan {
@@ -146,7 +155,7 @@ enum Logins {
         var active: [Provider: String] = [:]
         for p in Provider.allCases {
             if let main = readMain(p) {
-                Vault.save(p, email: main.email, payload: main.payload)
+                try? Vault.save(p, email: main.email, payload: main.payload)
                 active[p] = main.email.lowercased()
             } else {
                 Log.line("\(p.rawValue) main: none")
@@ -363,7 +372,7 @@ enum Vault {
         }
     }
 
-    static func save(_ provider: Provider, email: String, payload: Data) {
+    static func save(_ provider: Provider, email: String, payload: Data) throws {
         let account = "\(provider.rawValue):\(email.lowercased())"
         do {
             try Keychain.write(service: service, account: account, value: String(decoding: payload, as: UTF8.self))
@@ -371,12 +380,15 @@ enum Vault {
             Log.line("vault.save \(provider.rawValue) ok")
         } catch {
             Log.line("vault.save \(provider.rawValue) failed: \(error)")
+            throw error
         }
     }
 
-    static func delete(_ provider: Provider, email: String) {
+    /// Throws when the item is still there afterwards; the index then keeps the account so a
+    /// later sync cannot quietly resurrect it behind the user's back.
+    static func delete(_ provider: Provider, email: String) throws {
         let account = "\(provider.rawValue):\(email.lowercased())"
-        Keychain.delete(service: service, account: account)
+        guard Keychain.delete(service: service, account: account) else { throw AuthError.keychain("could not delete \(provider.rawValue) login") }
         writeIndex(readIndex().filter { $0 != account })
     }
 }
@@ -401,30 +413,63 @@ enum Keychain {
     /// Update in place when the item exists (no access-list change, so no dialog); create it with
     /// /usr/bin/security on the access list when it doesn't. Passing `-T` on an update rewrites
     /// the access list and that is what triggers the permission dialog every time.
+    /// `security -i` reads one command per line and truncates lines past about 4 KB.
+    static let interactiveLineLimit = 3900
+
+    /// The secret travels on `security -i`'s stdin, never in argv, where any process of the same
+    /// user could read it. Payloads too long for one interactive line (Codex carries JWTs) fall
+    /// back to argv, the exposure being that user's own processes for a few milliseconds.
     static func write(service: String, account: String, value: String) throws {
         let exists = run(["find-generic-password", "-a", account, "-s", service]).status == 0
-        let args = exists
-            ? ["add-generic-password", "-U", "-a", account, "-s", service, "-w", value]
-            : ["add-generic-password", "-a", account, "-s", service, "-w", value, "-T", "/usr/bin/security"]
-        let r = run(args)
-        if r.status != 0 {
-            throw AuthError.keychain(String(decoding: r.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+        let flat = singleLine(value)
+        var line = "add-generic-password \(exists ? "-U " : "")-a \(quoted(account)) -s \(quoted(service)) -w \(quoted(flat))"
+        if !exists { line += " -T /usr/bin/security" }
+        let r: (status: Int32, stdout: Data, stderr: Data)
+        if line.utf8.count <= interactiveLineLimit {
+            r = run(["-i"], stdin: Data((line + "\n").utf8))
+        } else {
+            var args = ["add-generic-password"] + (exists ? ["-U"] : []) + ["-a", account, "-s", service, "-w", flat]
+            if !exists { args += ["-T", "/usr/bin/security"] }
+            r = run(args)
         }
+        // stderr of `-i` echoes the command, so only the status is reported.
+        if r.status != 0 { throw AuthError.keychain("security exited \(r.status)") }
     }
 
-    static func delete(service: String, account: String) {
+    /// JSON with newlines re-serialized compactly (whitespace between tokens carries no meaning);
+    /// anything else with newlines is left alone and will fail loudly.
+    static func singleLine(_ value: String) -> String {
+        guard value.contains("\n"), let obj = try? JSONSerialization.jsonObject(with: Data(value.utf8)),
+              let data = try? JSONSerialization.data(withJSONObject: obj) else { return value }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Double-quoted token for `security -i`, which unescapes backslashes and quotes.
+    static func quoted(_ s: String) -> String {
+        "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
+    @discardableResult
+    static func delete(service: String, account: String) -> Bool {
         let r = run(["delete-generic-password", "-a", account, "-s", service])
         Log.line("keychain.delete \(service) status=\(r.status)")
+        return r.status == 0
     }
 
-    private static func run(_ args: [String]) -> (status: Int32, stdout: Data, stderr: Data) {
+    private static func run(_ args: [String], stdin input: Data? = nil) -> (status: Int32, stdout: Data, stderr: Data) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
         p.arguments = args
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err
+        let inPipe = input.map { _ in Pipe() }
+        p.standardInput = inPipe ?? FileHandle.nullDevice
         do { try p.run() } catch { return (-1, Data(), Data(error.localizedDescription.utf8)) }
+        if let inPipe, let input {
+            inPipe.fileHandleForWriting.write(input)
+            try? inPipe.fileHandleForWriting.close()
+        }
         let o = out.fileHandleForReading.readDataToEndOfFile()
         let e = err.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
@@ -462,11 +507,16 @@ enum JWT {
 /// Append-only diagnostics, status codes and counts only.
 enum Log {
     static let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/VibeJuice/app.log")
+    /// One serial queue: the caller (often the main actor) never waits on the file.
+    private static let queue = DispatchQueue(label: "dev.samuel.vibejuice.log", qos: .utility)
+
     static func line(_ text: String) {
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let stamp = Date().formatted(.dateTime.hour().minute().second())
         let data = Data("\(stamp) \(text)\n".utf8)
-        if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(data); try? h.close() }
-        else { try? data.write(to: file) }
+        queue.async {
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(data); try? h.close() }
+            else { try? data.write(to: file) }
+        }
     }
 }

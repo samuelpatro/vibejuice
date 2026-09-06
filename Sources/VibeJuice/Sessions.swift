@@ -48,7 +48,7 @@ enum Sessions {
 
     /// Quits the sessions that predate a switch and reopens each one in its folder with the
     /// provider's resume command, so the conversation continues under the new account.
-    @MainActor static func restart(_ pending: PendingRestart) async {
+    static func restart(_ pending: PendingRestart) async {
         for session in pending.sessions { kill(session.pid, SIGTERM) }
         // Give the CLIs a moment to flush their transcripts before relaunching.
         try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -100,7 +100,7 @@ enum Terminal {
     static func run(_ command: String, cwd: String, host: String? = nil) {
         let app = choose(host: host, installed: installed)
         let full = shellLine(command, cwd: cwd)
-        Log.line("terminal: \(app) runs \(command) in \(cwd)")
+        Log.line("terminal: \(app) runs \(command)")
         switch app {
         case "cmux":
             launch(cmuxCLI!, ["workspace", "create", "--cwd", cwd, "--command", "zsh -lc \(quoted(full))"])
