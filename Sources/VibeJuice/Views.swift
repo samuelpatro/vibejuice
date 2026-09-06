@@ -8,7 +8,7 @@ struct PopoverView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 6) {
-                ForEach(Provider.allCases) { p in
+                ForEach(store.visibleProviders) { p in
                     ProviderSection(provider: p)
                 }
             }

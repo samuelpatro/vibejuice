@@ -112,7 +112,7 @@ struct MainLogin: Sendable {
 /// state after the write that preceded it.
 enum Logins {
     struct Entry: Sendable { let provider: Provider; let email: String; let payload: Data }
-    struct Scan: Sendable { let vault: [Entry]; let active: [Provider: String] }
+    struct Scan: Sendable { let vault: [Entry]; let active: [Provider: String]; let installed: Set<Provider> }
 
     private static let queue = DispatchQueue(label: "dev.samuel.vibejuice.logins", qos: .userInitiated)
 
@@ -153,7 +153,7 @@ enum Logins {
             }
         }
         let vault = Vault.list().map { Entry(provider: $0.0, email: $0.1, payload: $0.2) }
-        return Scan(vault: vault, active: active)
+        return Scan(vault: vault, active: active, installed: Installed.detect())
     }
 
     static func readMain(_ p: Provider) -> MainLogin? {

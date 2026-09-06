@@ -58,6 +58,16 @@ final class Store {
         }
     }
 
+    /// CLIs found on this Mac; every provider until the first scan reports.
+    var installed: Set<Provider> = Set(Provider.allCases)
+
+    /// Sections worth showing: a provider with a saved login or an installed CLI. With none of
+    /// either, all three stay visible so there is still a way to sign in.
+    var visibleProviders: [Provider] {
+        let shown = Provider.allCases.filter { installed.contains($0) || !accounts(for: $0).isEmpty }
+        return shown.isEmpty ? Provider.allCases : shown
+    }
+
     func activeAccount(for provider: Provider) -> Account? {
         accounts.first { $0.provider == provider && $0.isActive }
     }
@@ -86,7 +96,8 @@ final class Store {
             next.append(a)
         }
         accounts = next
-        Log.line("reload done accounts=\(next.count) active=\(scan.active.count)")
+        installed = scan.installed
+        Log.line("reload done accounts=\(next.count) active=\(scan.active.count) installed=\(scan.installed.map(\.rawValue).sorted())")
     }
 
     /// Refreshes every account. A call while one is already running is skipped, and `refreshing`

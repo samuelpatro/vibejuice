@@ -37,3 +37,22 @@ import Testing
         #expect(Terminal.escaped("say \"hi\" \\ bye") == "say \\\"hi\\\" \\\\ bye")
     }
 }
+
+@Suite struct InstalledTests {
+    @Test func configDirOrBinaryOnPath() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("vibejuice-installed-\(UUID().uuidString)")
+        let home = root.appendingPathComponent("home"), bin = root.appendingPathComponent("bin")
+        try fm.createDirectory(at: home.appendingPathComponent(".claude"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: bin, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: bin.appendingPathComponent("grok"))
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.appendingPathComponent("grok").path)
+        defer { try? fm.removeItem(at: root) }
+
+        let found = Installed.providers(home: home, pathDirs: [bin.path])
+        #expect(found.contains(.claude))
+        #expect(found.contains(.grok))
+        // Codex resolves through CodexMain.home (the real ~/.codex), so it is not asserted here.
+        #expect(Installed.providers(home: home, pathDirs: []).contains(.grok) == false)
+    }
+}

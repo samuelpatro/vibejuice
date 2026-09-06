@@ -144,3 +144,27 @@ enum Terminal {
         do { try p.run() } catch { Log.line("terminal: launch failed: \(error)") }
     }
 }
+
+// MARK: - Installed CLIs
+
+/// Which CLIs exist on this Mac. A provider with neither a login nor an installed CLI has no
+/// business in the popover, so its section is hidden until the CLI shows up.
+enum Installed {
+    static func detect() -> Set<Provider> {
+        let path = Sessions.shell("/bin/zsh", ["-lc", "printf %s \"$PATH\""])
+        return providers(home: FileManager.default.homeDirectoryForCurrentUser,
+                         pathDirs: path.split(separator: ":").map(String.init))
+    }
+
+    /// A CLI counts as installed when its config directory exists (`~/.claude`, `~/.codex`,
+    /// `~/.grok`) or its binary sits in one of `pathDirs`. Pure apart from the file system.
+    static func providers(home: URL, pathDirs: [String], fm: FileManager = .default) -> Set<Provider> {
+        var found: Set<Provider> = []
+        for p in Provider.allCases {
+            let dir = p == .codex ? CodexMain.home : home.appendingPathComponent(".\(p.rawValue)")
+            if fm.fileExists(atPath: dir.path) { found.insert(p); continue }
+            if pathDirs.contains(where: { fm.isExecutableFile(atPath: "\($0)/\(p.binary)") }) { found.insert(p) }
+        }
+        return found
+    }
+}
