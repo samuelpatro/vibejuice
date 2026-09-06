@@ -46,25 +46,41 @@ struct MenuBarLabel: View {
     var store: Store
 
     var body: some View {
-        let lowest = Provider.allCases.compactMap { store.activeAccount(for: $0)?.headroom }.min()
+        // One glass; inside it one colored column per provider with an active account, filled
+        // to that account's headroom. So the cup says both how much and whose.
+        let levels: [(Provider, Double)] = Provider.allCases.compactMap { p in
+            store.activeAccount(for: p)?.headroom.map { (p, $0 / 100) }
+        }
         HStack(spacing: 4) {
-            Image(nsImage: MenuBarIcon.image(level: lowest.map { $0 / 100 },
-                                             bolt: store.accounts.contains { $0.tokenMax != nil }))
-            if store.showPercent, let lowest {
-                Text("\(Int(lowest.rounded()))%")
+            Image(nsImage: MenuBarIcon.image(levels: levels, bolt: store.accounts.contains { $0.tokenMax != nil }))
+            if store.showPercent, let lowest = levels.map(\.1).min() {
+                Text("\(Int((lowest * 100).rounded()))%")
             }
         }
     }
 }
 
 enum MenuBarIcon {
-    static func image(level: Double?, bolt: Bool) -> NSImage {
-        let size = NSSize(width: bolt ? 30 : 18, height: 18)
-        let img = NSImage(size: size, flipped: false) { rect in
+    /// Provider colors for the columns inside the glass, echoing the icon's juice bands.
+    static func tint(_ p: Provider) -> NSColor {
+        switch p {
+        case .claude: NSColor(red: 1.0, green: 0.62, blue: 0.28, alpha: 1)   // orange
+        case .codex: NSColor(red: 0.30, green: 0.80, blue: 0.60, alpha: 1)   // green
+        case .grok: NSColor(red: 0.55, green: 0.65, blue: 1.0, alpha: 1)     // blue
+        }
+    }
+
+    /// One glass with a colored column per provider (0…1 fill), then a bolt. A color image,
+    /// not a template, so the outline is drawn in the menu bar's current label color.
+    static func image(levels: [(Provider, Double)], bolt: Bool) -> NSImage {
+        let gw: CGFloat = 12, gh: CGFloat = 13, inset: CGFloat = 1.5
+        let width = inset * 2 + gw + (bolt ? 12 : 0)
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let ink = dark ? NSColor.white : NSColor.black
+        let img = NSImage(size: NSSize(width: width, height: 18), flipped: false) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             // Same tumbler as scripts/make-icon.swift, scaled to a menu bar glyph.
-            let gw: CGFloat = 10, gh: CGFloat = 13
-            let gx: CGFloat = 1.5, gy: CGFloat = 1.5
+            let gx = inset, gy = inset
             let glass = CGMutablePath()
             glass.move(to: CGPoint(x: gx, y: gy + gh))
             glass.addLine(to: CGPoint(x: gx + gw * 0.10, y: gy + gh * 0.06))
@@ -74,14 +90,21 @@ enum MenuBarIcon {
             glass.addLine(to: CGPoint(x: gx + gw, y: gy + gh))
             glass.closeSubpath()
 
-            // Juice: unknown headroom shows a neutral two-thirds so an empty glass always means spent.
-            ctx.saveGState()
-            ctx.addPath(glass); ctx.clip()
-            ctx.setFillColor(NSColor.black.withAlphaComponent(0.55).cgColor)
-            ctx.fill(CGRect(x: gx, y: gy, width: gw, height: gh * 0.88 * CGFloat(level ?? 0.66)))
-            ctx.restoreGState()
+            // Juice: side-by-side columns, one per provider, each filled to its headroom.
+            if !levels.isEmpty {
+                ctx.saveGState()
+                ctx.addPath(glass); ctx.clip()
+                let n = CGFloat(levels.count), gap: CGFloat = 1
+                let colW = (gw - gap * (n - 1)) / n
+                for (i, (provider, level)) in levels.enumerated() {
+                    let x = gx + CGFloat(i) * (colW + gap)
+                    ctx.setFillColor(tint(provider).cgColor)
+                    ctx.fill(CGRect(x: x, y: gy, width: colW, height: gh * 0.88 * CGFloat(max(0, min(1, level)))))
+                }
+                ctx.restoreGState()
+            }
 
-            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.setStrokeColor(ink.cgColor)
             ctx.setLineJoin(.round)
             ctx.setLineCap(.round)
             ctx.setLineWidth(1.4)
@@ -95,11 +118,13 @@ enum MenuBarIcon {
             if bolt, let symbol = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 11, weight: .bold)) {
                 let s = symbol.size
-                symbol.draw(in: CGRect(x: rect.maxX - s.width - 1, y: rect.midY - s.height / 2, width: s.width, height: s.height))
+                ink.set()
+                symbol.draw(in: CGRect(x: rect.maxX - s.width - 1, y: rect.midY - s.height / 2, width: s.width, height: s.height),
+                            from: .zero, operation: .sourceOver, fraction: 1)
             }
             return true
         }
-        img.isTemplate = true
+        img.isTemplate = false
         return img
     }
 }
