@@ -46,7 +46,7 @@ struct MenuBarLabel: View {
     var store: Store
 
     var body: some View {
-        // One glass; inside it one colored column per provider with an active account, filled
+        // One glass; inside it one colored band per provider with an active account, filled
         // to that account's headroom. So the cup says both how much and whose.
         let levels: [(Provider, Double)] = Provider.allCases.compactMap { p in
             store.activeAccount(for: p)?.headroom.map { (p, $0 / 100) }
@@ -70,7 +70,7 @@ enum MenuBarIcon {
         }
     }
 
-    /// One glass with a colored column per provider (0…1 fill), then a bolt. A color image,
+    /// One glass with stacked colored bands, one per provider (0…1 fill), then a bolt. A color image,
     /// not a template, so the outline is drawn in the menu bar's current label color.
     static func image(levels: [(Provider, Double)], bolt: Bool) -> NSImage {
         let gw: CGFloat = 12, gh: CGFloat = 13, inset: CGFloat = 1.5
@@ -90,16 +90,20 @@ enum MenuBarIcon {
             glass.addLine(to: CGPoint(x: gx + gw, y: gy + gh))
             glass.closeSubpath()
 
-            // Juice: side-by-side columns, one per provider, each filled to its headroom.
+            // Juice: full-width bands stacked bottom-up like the app icon's layers. Each provider
+            // owns an equal share of the glass and its band fills that share to its headroom, so
+            // the overall level is the total headroom and the colors say whose it is.
             if !levels.isEmpty {
                 ctx.saveGState()
                 ctx.addPath(glass); ctx.clip()
                 let n = CGFloat(levels.count), gap: CGFloat = 1
-                let colW = (gw - gap * (n - 1)) / n
-                for (i, (provider, level)) in levels.enumerated() {
-                    let x = gx + CGFloat(i) * (colW + gap)
+                let share = (gh * 0.88 - gap * (n - 1)) / n
+                var y = gy
+                for (provider, level) in levels {
+                    let h = share * CGFloat(max(0, min(1, level)))
                     ctx.setFillColor(tint(provider).cgColor)
-                    ctx.fill(CGRect(x: x, y: gy, width: colW, height: gh * 0.88 * CGFloat(max(0, min(1, level)))))
+                    ctx.fill(CGRect(x: gx, y: y, width: gw, height: h))
+                    y += h + (h > 0 ? gap : 0)
                 }
                 ctx.restoreGState()
             }

@@ -338,15 +338,13 @@ struct Meter: View {
 struct IconCircle: View {
     let systemName: String
     var size: CGFloat = 28
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: size * 0.42, weight: .medium))
             .frame(width: size, height: size)
             .contentShape(Circle())
-            .glassEffect(.regular.tint(GlassTint.lift(scheme, contrast: contrast)).interactive(), in: .circle)
+            .glassControl(.circle)
     }
 }
 
@@ -358,8 +356,6 @@ struct IconCircle: View {
 struct RefreshButton: View {
     @Environment(Store.self) private var store
     var size: CGFloat = 28
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func angle(at date: Date) -> Double {
@@ -376,7 +372,7 @@ struct RefreshButton: View {
         }
         .frame(width: size, height: size)
         .contentShape(Circle())
-        .glassEffect(.regular.tint(GlassTint.lift(scheme, contrast: contrast)).interactive(), in: .circle)
+        .glassControl(.circle)
     }
 }
 
@@ -430,8 +426,6 @@ struct AboutView: View {
 struct Pill: View {
     let text: String
     var prominent = false
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Text(text)
@@ -439,17 +433,37 @@ struct Pill: View {
             .foregroundStyle(prominent ? Color.white : Color.primary)
             .padding(.horizontal, 10).frame(height: 24)
             .contentShape(Capsule())
-            .glassEffect(.regular.tint(prominent ? Color.accentColor : GlassTint.lift(scheme, contrast: contrast)).interactive(), in: .capsule)
+            .glassControl(.capsule, prominent: prominent)
     }
 }
 
-/// Plain glass sinks into the panel on a dark background. Native controls sit above it, so
-/// non-prominent controls get a light tint that reads as a button in both appearances, and a
-/// stronger one under Increase Contrast.
-enum GlassTint {
-    static func lift(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color {
+/// Control glass: real interactive Liquid Glass with a hairline rim so the edge reads against the
+/// panel's own material, no flat tint (a tint turns glass into a grey disc). Prominent controls
+/// are accent-tinted. Increase Contrast swaps the rim for a solid light fill.
+struct GlassControl<S: InsettableShape>: ViewModifier {
+    let shape: S
+    var prominent = false
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
         let strong = contrast == .increased
-        return scheme == .dark ? Color.white.opacity(strong ? 0.28 : 0.14) : Color.white.opacity(strong ? 0.85 : 0.6)
+        let glass: Glass = prominent ? .regular.tint(Color.accentColor).interactive()
+            : strong ? .regular.tint(scheme == .dark ? Color.white.opacity(0.3) : Color.white.opacity(0.85)).interactive()
+            : .regular.interactive()
+        content
+            .glassEffect(glass, in: shape)
+            .overlay {
+                if !prominent && !strong {
+                    shape.strokeBorder(Color.white.opacity(scheme == .dark ? 0.22 : 0.55), lineWidth: 0.75)
+                }
+            }
+    }
+}
+
+extension View {
+    func glassControl<S: InsettableShape>(_ shape: S, prominent: Bool = false) -> some View {
+        modifier(GlassControl(shape: shape, prominent: prominent))
     }
 }
 
