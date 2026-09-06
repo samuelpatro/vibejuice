@@ -144,8 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// reports, so this is the only trace a crash leaves. Only async-signal-safe calls: the file is
 /// opened up front and the handler uses write(2) and backtrace_symbols_fd, never Foundation.
 enum CrashLog {
-    private static var fd: Int32 = -1
-    private static let frames = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 64)
+    // Written once at install, read only inside the signal handler.
+    nonisolated(unsafe) private static var fd: Int32 = -1
+    nonisolated(unsafe) private static let frames = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 64)
 
     static func install() {
         fd = open(Log.file.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)

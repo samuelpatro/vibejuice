@@ -133,48 +133,17 @@ enum TokenRefresh {
 
     /// Runs the CLI to completion. On timeout the process is terminated, then killed, and always
     /// reaped before returning, so it can never write to the staging item after cleanup.
-    private static func run(_ bin: String, cwd: String, env: [String: String], timeout: TimeInterval = 90) throws {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: bin)
-        p.arguments = arguments
-        p.currentDirectoryURL = URL(fileURLWithPath: cwd)
+    private static func run(_ bin: String, cwd: String, env: [String: String]) throws {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(NSHomeDirectory())/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         environment["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
         for (k, v) in env { environment[k] = v }
-        p.environment = environment
-        p.standardOutput = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        let err = Pipe()
-        p.standardError = err
-        let errBuffer = ErrBuffer()
-        err.fileHandleForReading.readabilityHandler = { h in
-            let d = h.availableData
-            if d.isEmpty { h.readabilityHandler = nil } else { errBuffer.append(d) }
-        }
-        let done = DispatchSemaphore(value: 0)
-        p.terminationHandler = { _ in done.signal() }
-        try p.run()
-        var timedOut = false
-        if done.wait(timeout: .now() + timeout) == .timedOut {
-            timedOut = true
-            p.terminate()
-            if done.wait(timeout: .now() + 5) == .timedOut { kill(p.processIdentifier, SIGKILL) }
-        }
-        p.waitUntilExit()
-        err.fileHandleForReading.readabilityHandler = nil
-        Log.line("token refresh claude exit=\(p.terminationStatus)\(timedOut ? " (timeout)" : "")")
-        if timedOut { throw Failure.cliFailed("Claude Code took too long") }
-        guard p.terminationStatus == 0 else {
-            let stderr = String(decoding: errBuffer.data, as: UTF8.self)
+        let r = Shell.run(bin, arguments, cwd: cwd, env: environment, timeout: 90)
+        Log.line("token refresh claude exit=\(r.status)\(r.timedOut ? " (timeout)" : "")")
+        if r.timedOut { throw Failure.cliFailed("Claude Code took too long") }
+        guard r.status == 0 else {
+            let stderr = String(decoding: r.stderr, as: UTF8.self)
             throw Failure.cliFailed(stderr.split(separator: "\n").last.map { String($0.prefix(200)) } ?? "")
         }
-    }
-
-    private final class ErrBuffer: @unchecked Sendable {
-        private let lock = NSLock()
-        private var bytes = Data()
-        func append(_ d: Data) { lock.lock(); bytes.append(d); lock.unlock() }
-        var data: Data { lock.lock(); defer { lock.unlock() }; return bytes }
     }
 }

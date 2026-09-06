@@ -59,14 +59,7 @@ enum Sessions {
     }
 
     static func shell(_ path: String, _ args: [String]) -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        let out = Pipe(); p.standardOutput = out; p.standardError = Pipe()
-        guard (try? p.run()) != nil else { return "" }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return String(decoding: data, as: UTF8.self)
+        Shell.run(path, args).text
     }
 }
 
@@ -138,10 +131,7 @@ enum Terminal {
     }
 
     private static func launch(_ path: String, _ args: [String]) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        do { try p.run() } catch { Log.line("terminal: launch failed: \(error)") }
+        do { try Shell.launch(path, args) } catch { Log.line("terminal: launch failed: \(error)") }
     }
 }
 

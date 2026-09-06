@@ -29,15 +29,11 @@ enum UsageClient {
         return URLSession(configuration: cfg)
     }()
 
-    private static let iso: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-    private static let isoPlain = ISO8601DateFormatter()
+    private static let iso = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    private static let isoPlain = Date.ISO8601FormatStyle()
 
     private static func parseDate(_ any: Any?) -> Date? {
-        if let s = any as? String { return iso.date(from: s) ?? isoPlain.date(from: s) }
+        if let s = any as? String { return (try? iso.parse(s)) ?? (try? isoPlain.parse(s)) }
         if let n = any as? Double { return Date(timeIntervalSince1970: n > 1e12 ? n / 1000 : n) }
         return nil
     }

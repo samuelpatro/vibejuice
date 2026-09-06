@@ -9,6 +9,7 @@ One Swift package, one executable target, no dependencies. Files in `Sources/Vib
 | `Usage.swift` | `UsageClient` requests plus the pure `parseClaude`, `parseCodex` and `parseGrok`, `DebugLog` shape dumps | `api.anthropic.com`, `chatgpt.com`, `cli-chat-proxy.grok.com` |
 | `Refresh.swift` | `TokenRefresh`: runs Claude Code headless so it renews an expired token, staging inactive logins under a throwaway `CLAUDE_CONFIG_DIR` | Claude Code binary, Keychain |
 | `Alerts.swift` | `Alert`, which notifications are due (pure), `Notifier` | UserNotifications |
+| `Shell.swift` | `Shell.run` and `Shell.launch`, the only place a child process is spawned: drained pipes, stdin, timeout with kill, always reaped | any binary |
 | `Sessions.swift` | Running CLI processes, host terminal detection, restart, `Terminal` launchers, `Installed` CLI detection | `pgrep`, `ps`, `lsof`, cmux CLI, `open`, AppleScript |
 | `Store.swift` | UI state and orchestration (`@Observable`, main actor) | everything above |
 | `Views.swift` | Popover, rows, controls, About | `Store` |

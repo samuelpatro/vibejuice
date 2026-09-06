@@ -424,7 +424,7 @@ enum Keychain {
         let flat = singleLine(value)
         var line = "add-generic-password \(exists ? "-U " : "")-a \(quoted(account)) -s \(quoted(service)) -w \(quoted(flat))"
         if !exists { line += " -T /usr/bin/security" }
-        let r: (status: Int32, stdout: Data, stderr: Data)
+        let r: Shell.Result
         if line.utf8.count <= interactiveLineLimit {
             r = run(["-i"], stdin: Data((line + "\n").utf8))
         } else {
@@ -456,24 +456,8 @@ enum Keychain {
         return r.status == 0
     }
 
-    private static func run(_ args: [String], stdin input: Data? = nil) -> (status: Int32, stdout: Data, stderr: Data) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        p.arguments = args
-        let out = Pipe(), err = Pipe()
-        p.standardOutput = out
-        p.standardError = err
-        let inPipe = input.map { _ in Pipe() }
-        p.standardInput = inPipe ?? FileHandle.nullDevice
-        do { try p.run() } catch { return (-1, Data(), Data(error.localizedDescription.utf8)) }
-        if let inPipe, let input {
-            inPipe.fileHandleForWriting.write(input)
-            try? inPipe.fileHandleForWriting.close()
-        }
-        let o = out.fileHandleForReading.readDataToEndOfFile()
-        let e = err.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, o, e)
+    private static func run(_ args: [String], stdin input: Data? = nil) -> Shell.Result {
+        Shell.run("/usr/bin/security", args, stdin: input)
     }
 }
 
