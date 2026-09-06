@@ -317,46 +317,6 @@ struct Meter: View {
     }
 }
 
-struct Bar: View {
-    let used: Double
-    let secondary: Bool
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(0.1))
-                Capsule().fill(color).frame(width: max(0, min(1, used / 100)) * geo.size.width)
-            }
-        }
-        .frame(height: 4)
-    }
-
-    private var color: Color {
-        if used >= 99.5 { return .red }
-        if used >= 80 { return .yellow }
-        return secondary ? Color.green.opacity(0.55) : .green
-    }
-}
-
-// MARK: - Relative time
-
-enum Relative {
-    static func text(to date: Date) -> String {
-        let s = date.timeIntervalSinceNow
-        if s <= 0 { return "now" }
-        if s < 3600 { return "in \(max(1, Int(s / 60))) min" }
-        if s < 36 * 3600 { return "in \(Int((s / 3600).rounded())) h" }
-        return "in \(Int((s / 86400).rounded())) days"
-    }
-
-    static func text(from date: Date) -> String {
-        let s = -date.timeIntervalSinceNow
-        if s < 60 { return "just now" }
-        if s < 3600 { return "\(Int(s / 60)) min ago" }
-        return "\(Int((s / 3600).rounded())) h ago"
-    }
-}
-
 /// One shape for every icon button in the app: a circular interactive glass disc.
 struct IconCircle: View {
     let systemName: String

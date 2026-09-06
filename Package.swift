@@ -9,6 +9,12 @@ let package = Package(
             name: "VibeJuice",
             path: "Sources/VibeJuice",
             swiftSettings: [.swiftLanguageMode(.v5), .unsafeFlags(["-parse-as-library"])]
-        )
+        ),
+        .testTarget(
+            name: "VibeJuiceTests",
+            dependencies: ["VibeJuice"],
+            path: "Tests/VibeJuiceTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

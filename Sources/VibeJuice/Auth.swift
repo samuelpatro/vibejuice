@@ -100,9 +100,66 @@ struct GrokCredentials {
 
 // MARK: - Main login slots (what the CLIs actually read)
 
-struct MainLogin {
+struct MainLogin: Sendable {
     let email: String
     let payload: Data
+}
+
+/// The three CLIs' main login slots plus the vault, read and written as a unit. All calls run on
+/// one serial queue, so a switch and a scan can never interleave and a scan always sees the
+/// state after the write that preceded it.
+enum Logins {
+    struct Entry: Sendable { let provider: Provider; let email: String; let payload: Data }
+    struct Scan: Sendable { let vault: [Entry]; let active: [Provider: String] }
+
+    private static let queue = DispatchQueue(label: "dev.samuel.vibejuice.logins", qos: .userInitiated)
+
+    /// Saves each CLI's current login into the vault, then lists the vault.
+    static func scan() async -> Scan {
+        await withCheckedContinuation { c in queue.async { c.resume(returning: scanNow()) } }
+    }
+
+    /// Snapshots the login being left (its CLI may have refreshed the token), then installs
+    /// `payload` as the main login, the way /login would.
+    static func activate(_ provider: Provider, payload: Data) async throws {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            queue.async {
+                if let main = readMain(provider) { Vault.save(provider, email: main.email, payload: main.payload) }
+                do { try writeMain(provider, payload); c.resume() } catch { c.resume(throwing: error) }
+            }
+        }
+    }
+
+    static func scanNow() -> Scan {
+        Log.line("reload start")
+        var active: [Provider: String] = [:]
+        for p in Provider.allCases {
+            if let main = readMain(p) {
+                Vault.save(p, email: main.email, payload: main.payload)
+                active[p] = main.email.lowercased()
+            } else {
+                Log.line("\(p.rawValue) main: none")
+            }
+        }
+        let vault = Vault.list().map { Entry(provider: $0.0, email: $0.1, payload: $0.2) }
+        return Scan(vault: vault, active: active)
+    }
+
+    static func readMain(_ p: Provider) -> MainLogin? {
+        switch p { case .claude: ClaudeMain.read(); case .codex: CodexMain.read(); case .grok: GrokMain.read() }
+    }
+
+    static func writeMain(_ p: Provider, _ payload: Data) throws {
+        switch p { case .claude: try ClaudeMain.write(payload); case .codex: try CodexMain.write(payload); case .grok: try GrokMain.write(payload) }
+    }
+
+    static func planLabel(_ p: Provider, _ payload: Data) -> String? {
+        switch p {
+        case .claude: ClaudeCredentials(payload: payload)?.planLabel
+        case .codex: CodexCredentials(payload: payload)?.planLabel
+        case .grok: nil
+        }
+    }
 }
 
 enum ClaudeMain {
@@ -126,7 +183,7 @@ enum ClaudeMain {
         guard let root = try JSONSerialization.jsonObject(with: payload) as? [String: Any],
               let oauth = root["claudeAiOauth"] else { throw AuthError.badPayload }
         let item = try JSONSerialization.data(withJSONObject: ["claudeAiOauth": oauth])
-        try Keychain.writeViaSecurityCLI(service: service, account: NSUserName(), value: String(decoding: item, as: UTF8.self))
+        try Keychain.write(service: service, account: NSUserName(), value: String(decoding: item, as: UTF8.self))
         var config = readConfig()
         if let account = root["oauthAccount"] as? [String: Any], !account.isEmpty {
             config["oauthAccount"] = account
@@ -139,22 +196,6 @@ enum ClaudeMain {
         guard let data = try? Data(contentsOf: configFile),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
         return root
-    }
-
-    /// Logins created earlier under CLAUDE_CONFIG_DIR profiles (~/.claude-profiles/<name>).
-    static func readProfile(_ dir: URL) -> MainLogin? {
-        let normalized = dir.path.precomposedStringWithCanonicalMapping
-        let hex = SHA256.hash(data: Data(normalized.utf8)).map { String(format: "%02x", $0) }.joined()
-        guard let data = Keychain.read(service: "Claude Code-credentials-\(hex.prefix(8))", account: NSUserName()),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let oauth = root["claudeAiOauth"] as? [String: Any],
-              let cfg = try? Data(contentsOf: dir.appendingPathComponent(".claude.json")),
-              let cfgRoot = try? JSONSerialization.jsonObject(with: cfg) as? [String: Any],
-              let account = cfgRoot["oauthAccount"] as? [String: Any],
-              let email = account["emailAddress"] as? String,
-              let payload = try? JSONSerialization.data(withJSONObject: ["claudeAiOauth": oauth, "oauthAccount": account])
-        else { return nil }
-        return MainLogin(email: email, payload: payload)
     }
 }
 
@@ -175,7 +216,12 @@ enum CodexMain {
 
     static var storeMode: StoreMode {
         guard let text = try? String(contentsOf: home.appendingPathComponent("config.toml"), encoding: .utf8) else { return .file }
-        for line in text.split(separator: "\n") {
+        return storeMode(fromConfig: text)
+    }
+
+    /// `cli_auth_credentials_store = "keyring"  # comment` -> .keyring; anything else -> .file.
+    static func storeMode(fromConfig toml: String) -> StoreMode {
+        for line in toml.split(separator: "\n") {
             let t = line.trimmingCharacters(in: .whitespaces)
             guard t.hasPrefix("cli_auth_credentials_store") else { continue }
             let raw = t.split(separator: "=", maxSplits: 1).last.map(String.init) ?? ""
@@ -185,8 +231,10 @@ enum CodexMain {
         return .file
     }
 
+    static var keychainAccount: String { keychainAccount(forHome: home) }
+
     /// Same key Codex derives: "cli|" plus the first 16 hex digits of SHA-256 over the canonical home path.
-    static var keychainAccount: String {
+    static func keychainAccount(forHome home: URL) -> String {
         let canonical = home.resolvingSymlinksInPath().path
         let hex = SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined()
         return "cli|" + String(hex.prefix(16))
@@ -351,10 +399,6 @@ enum Keychain {
         if r.status != 0 {
             throw AuthError.keychain(String(decoding: r.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
         }
-    }
-
-    static func writeViaSecurityCLI(service: String, account: String, value: String) throws {
-        try write(service: service, account: account, value: value)
     }
 
     static func delete(service: String, account: String) {

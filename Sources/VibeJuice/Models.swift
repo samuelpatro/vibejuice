@@ -15,8 +15,6 @@ enum Provider: String, CaseIterable, Identifiable, Codable {
     var loginCommand: String {
         switch self { case .claude: "claude auth login"; case .codex: "codex login"; case .grok: "grok login" }
     }
-    /// Providers without a known usage endpoint show accounts and switching only.
-    var hasUsage: Bool { self != .grok }
     /// Claude Code checks its credential store before each request and adopts a changed login on
     /// its own (Claude Code 2.1.261: the change check clears the cached credentials when the
     /// Keychain item differs). Codex refuses to adopt a different account mid-session; Grok unknown.
@@ -27,7 +25,7 @@ enum Provider: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-struct RunningSession: Identifiable {
+struct RunningSession: Identifiable, Sendable {
     let pid: Int32
     let cwd: String
     /// App hosting the session (cmux, Ghostty, iTerm, Terminal), nil when it could not be told.
@@ -35,7 +33,7 @@ struct RunningSession: Identifiable {
     var id: Int32 { pid }
 }
 
-struct PendingRestart {
+struct PendingRestart: Sendable {
     let provider: Provider
     let account: String
     let sessions: [RunningSession]
@@ -51,7 +49,8 @@ struct QuotaWindow: Identifiable {
 
     var leftPercent: Double { max(0, 100 - usedPercent) }
     var exhausted: Bool { usedPercent >= 99.5 }
-    var isWeekly: Bool { label.hasPrefix("Week") || label == "Weekly" || id.contains("week") }
+    /// "Week, …", "Weekly", Codex's "<pool> week" extras, or an id that says so.
+    var isWeekly: Bool { label.lowercased().contains("week") || id.contains("week") || id.hasSuffix("-wk") }
 }
 
 struct TokenMaxNudge {
@@ -92,20 +91,22 @@ struct Account: Identifiable {
     /// Row label: first 15 characters, then an ellipsis. Full name lives in the tooltip.
     var shortName: String { email.count > 16 ? String(email.prefix(15)) + "…" : email }
 
-    /// Smallest headroom across windows, 0 when any window is spent.
+    /// Smallest headroom across windows, 0 when any window is spent (a 99.6% window is "spent",
+    /// not "0.4% left", and auto-switch and the menu bar glass rely on that).
     var headroom: Double? {
         let w = status.windows
         guard !w.isEmpty else { return nil }
-        return w.map(\.leftPercent).min()
+        return spent ? 0 : w.map(\.leftPercent).min()
     }
 
     var spent: Bool { status.windows.contains { $0.exhausted } }
 
     /// Tokenmax: a weekly window under 50% used whose reset is within 24 hours. Whatever is
     /// left vanishes at reset, so this is the moment to use it. Same rule as the statusline nudge.
-    var tokenMax: TokenMaxNudge? {
-        let now = Date()
-        return status.windows
+    var tokenMax: TokenMaxNudge? { tokenMax(now: Date()) }
+
+    func tokenMax(now: Date) -> TokenMaxNudge? {
+        status.windows
             .filter { $0.isWeekly && $0.usedPercent < 50 }
             .compactMap { w -> TokenMaxNudge? in
                 guard let r = w.resetsAt else { return nil }
@@ -117,4 +118,37 @@ struct Account: Identifiable {
     }
     var soonestReset: Date? { status.windows.compactMap { $0.exhausted ? $0.resetsAt : nil }.min() }
     var nextReset: Date? { status.windows.compactMap(\.resetsAt).min() }
+}
+
+/// Dotted version strings, missing components count as zero: 0.3 == 0.3.0, 0.10 > 0.9.
+enum Version {
+    static func isNewer(_ a: String, than b: String) -> Bool {
+        let x = a.split(separator: ".").map { Int($0) ?? 0 }, y = b.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(x.count, y.count) {
+            let l = i < x.count ? x[i] : 0, r = i < y.count ? y[i] : 0
+            if l != r { return l > r }
+        }
+        return false
+    }
+
+    /// "v0.3.8" or "0.3.8" -> "0.3.8".
+    static func number(fromTag tag: String) -> String { tag.hasPrefix("v") ? String(tag.dropFirst()) : tag }
+}
+
+/// Short relative times for the popover: "in 3 h", "in 6 days", "12 min ago".
+enum Relative {
+    static func text(to date: Date, now: Date = Date()) -> String {
+        let s = date.timeIntervalSince(now)
+        if s <= 0 { return "now" }
+        if s < 3600 { return "in \(max(1, Int(s / 60))) min" }
+        if s < 36 * 3600 { return "in \(Int((s / 3600).rounded())) h" }
+        return "in \(Int((s / 86400).rounded())) days"
+    }
+
+    static func text(from date: Date, now: Date = Date()) -> String {
+        let s = now.timeIntervalSince(date)
+        if s < 60 { return "just now" }
+        if s < 3600 { return "\(Int(s / 60)) min ago" }
+        return "\(Int((s / 3600).rounded())) h ago"
+    }
 }

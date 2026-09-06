@@ -47,7 +47,13 @@ enum UsageClient {
         guard (200..<300).contains(code) else { throw UsageError.http(code, String(decoding: data.prefix(200), as: UTF8.self)) }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw UsageError.badPayload }
         DebugLog.shape("claude-usage", root)
+        let windows = parseClaude(root)
+        guard !windows.isEmpty else { throw UsageError.badPayload }
+        return UsageResult(windows: windows, plan: creds.planLabel, manualResets: nil)
+    }
 
+    /// Windows from the /api/oauth/usage body. Pure, so the schemas can be tested with fixtures.
+    static func parseClaude(_ root: [String: Any]) -> [QuotaWindow] {
         var windows: [QuotaWindow] = []
 
         // Current schema: a `limits` array, one entry per window, with the model-scoped week
@@ -86,8 +92,7 @@ enum UsageClient {
                 windows.append(QuotaWindow(id: key, label: label, usedPercent: util, resetsAt: parseDate(w["resets_at"]), secondary: secondary))
             }
         }
-        guard !windows.isEmpty else { throw UsageError.badPayload }
-        return UsageResult(windows: windows, plan: creds.planLabel, manualResets: nil)
+        return windows
     }
 
     // MARK: Codex
@@ -110,7 +115,15 @@ enum UsageClient {
         guard (200..<300).contains(code) else { throw UsageError.http(code, String(decoding: data.prefix(200), as: UTF8.self)) }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw UsageError.badPayload }
         DebugLog.shape("codex-usage", root)
+        var result = parseCodex(root, fallbackPlan: creds.planLabel)
+        guard !result.windows.isEmpty else { throw UsageError.badPayload }
+        if result.manualResets == nil { result.manualResets = try? await codexManualResets(creds) }
+        return result
+    }
 
+    /// Windows, plan and reset credits from the wham/usage body. Pure, tested with fixtures.
+    /// `now` anchors windows that only carry `reset_after_seconds`.
+    static func parseCodex(_ root: [String: Any], fallbackPlan: String?, now: Date = Date()) -> UsageResult {
         let limits = (root["rate_limit"] ?? root["rate_limits"]) as? [String: Any] ?? root
         var windows: [QuotaWindow] = []
         for (key, secondary) in [("primary_window", false), ("secondary_window", true), ("primary", false), ("secondary", true)] {
@@ -125,7 +138,7 @@ enum UsageClient {
             default: label = "Weekly"
             }
             var reset: Date? = parseDate(w["reset_at"] ?? w["resets_at"])
-            if reset == nil, let after = w["reset_after_seconds"] as? Double { reset = Date().addingTimeInterval(after) }
+            if reset == nil, let after = w["reset_after_seconds"] as? Double { reset = now.addingTimeInterval(after) }
             windows.append(QuotaWindow(id: secondary ? "secondary" : "primary", label: label, usedPercent: used, resetsAt: reset, secondary: secondary))
         }
         // Feature-specific limits (e.g. a model-specific pool) show up only once they are in use.
@@ -137,14 +150,13 @@ enum UsageClient {
                     guard let w = rl[key] as? [String: Any], let used = w["used_percent"] as? Double, used > 0 else { continue }
                     let seconds = (w["limit_window_seconds"] as? Double) ?? 0
                     var reset: Date? = parseDate(w["reset_at"])
-                    if reset == nil, let after = w["reset_after_seconds"] as? Double { reset = Date().addingTimeInterval(after) }
+                    if reset == nil, let after = w["reset_after_seconds"] as? Double { reset = now.addingTimeInterval(after) }
                     windows.append(QuotaWindow(id: "extra-\(name)-\(tag)", label: "\(name) \(seconds < 6 * 3600 ? "5h" : "week")", usedPercent: used, resetsAt: reset, secondary: true))
                 }
             }
         }
-        guard !windows.isEmpty else { throw UsageError.badPayload }
 
-        var plan = creds.planLabel
+        var plan = fallbackPlan
         if let p = root["plan_type"] as? String, !p.isEmpty {
             plan = CodexCredentials(planType: p).planLabel
         }
@@ -152,7 +164,6 @@ enum UsageClient {
         if let rc = root["rate_limit_reset_credits"] as? [String: Any] {
             resets = (rc["available_count"] as? Int) ?? (rc["available_count"] as? Double).map(Int.init)
         }
-        if resets == nil { resets = try? await codexManualResets(creds) }
         return UsageResult(windows: windows, plan: plan, manualResets: resets)
     }
 
