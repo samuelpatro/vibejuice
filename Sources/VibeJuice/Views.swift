@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PopoverView: View {
-    @EnvironmentObject var store: Store
+    @Environment(Store.self) private var store
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -53,12 +53,12 @@ struct PopoverView: View {
             Spacer(minLength: 8)
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
-                    IconCircle(systemName: "arrow.clockwise", busy: store.refreshing)
+                    RefreshButton()
                         .onTapGesture { store.reload() }
                         .help("Refresh")
                     Menu {
-                        Toggle("Auto-switch when limit is hit", isOn: $store.autoSwitch)
-                        Toggle("Percent in menu bar", isOn: $store.showPercent)
+                        Toggle("Auto-switch when limit is hit", isOn: Binding(get: { store.autoSwitch }, set: { store.autoSwitch = $0 }))
+                        Toggle("Percent in menu bar", isOn: Binding(get: { store.showPercent }, set: { store.showPercent = $0 }))
                         Toggle("Launch at login", isOn: Binding(get: { store.launchAtLogin }, set: { store.setLaunchAtLogin($0) }))
                         Divider()
                         Button("Rescan logins") { store.reload() }
@@ -84,7 +84,7 @@ struct PopoverView: View {
 // MARK: - Section
 
 struct ProviderSection: View {
-    @EnvironmentObject var store: Store
+    @Environment(Store.self) private var store
     let provider: Provider
 
     var body: some View {
@@ -361,19 +361,36 @@ enum Relative {
 struct IconCircle: View {
     let systemName: String
     var size: CGFloat = 28
-    /// Shows an AppKit spinner instead of the icon. It animates on its own timer, unlike a
-    /// SwiftUI rotation, which does not reliably run inside a menu bar window.
-    var busy = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        Group {
-            if busy {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: systemName)
-                    .font(.system(size: size * 0.42, weight: .medium))
-            }
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.42, weight: .medium))
+            .frame(width: size, height: size)
+            .contentShape(Circle())
+            .glassEffect(.regular.tint(GlassTint.lift(scheme)).interactive(), in: .circle)
+    }
+}
+
+/// Refresh control whose arrow spins while a refresh runs. TimelineView redraws every frame and
+/// the closure reads `store.refreshing` live each frame, so the spin stops the moment a refresh
+/// ends without needing the menu bar popover to re-render its tree, which it does not do reliably
+/// on state changes while open. A plain rotated symbol, not an AppKit ProgressView, which keeps
+/// animating on its own timer after the tree stops updating.
+struct RefreshButton: View {
+    @Environment(Store.self) private var store
+    var size: CGFloat = 28
+    @Environment(\.colorScheme) private var scheme
+
+    private func angle(at date: Date) -> Double {
+        store.refreshing ? date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360 : 0
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: size * 0.42, weight: .medium))
+                .rotationEffect(.degrees(angle(at: context.date)))
         }
         .frame(width: size, height: size)
         .contentShape(Circle())

@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct VibeJuiceApp: App {
-    @StateObject private var store = Store()
+    @State private var store = Store()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     init() {
@@ -15,7 +15,7 @@ struct VibeJuiceApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PopoverView().environmentObject(store)
+            PopoverView().environment(store)
         } label: {
             MenuBarLabel(store: store)
         }
@@ -30,7 +30,7 @@ struct VibeJuiceApp: App {
 
         // VIBEJUICE_DEBUG_WINDOW=1 also shows the popover as a plain window (screenshots, dev).
         Window("VibeJuice", id: "debug") {
-            PopoverView().environmentObject(store)
+            PopoverView().environment(store)
         }
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(debugWindow ? .presented : .suppressed)
@@ -43,7 +43,7 @@ struct VibeJuiceApp: App {
 /// active accounts, and a bolt joins it while unused weekly quota is about to reset (tokenmax).
 /// MenuBarExtra labels only draw text and images, so everything is baked into one image.
 struct MenuBarLabel: View {
-    @ObservedObject var store: Store
+    var store: Store
 
     var body: some View {
         let lowest = Provider.allCases.compactMap { store.activeAccount(for: $0)?.headroom }.min()

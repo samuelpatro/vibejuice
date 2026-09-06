@@ -4,29 +4,31 @@ import ServiceManagement
 import UserNotifications
 
 @MainActor
-final class Store: ObservableObject {
-    @Published var accounts: [Account] = []
-    @Published var refreshing = false
-    @Published var lastRefresh: Date?
-    @Published var notice: String?
+@Observable
+final class Store {
+    var accounts: [Account] = []
+    var refreshing = false
+    var lastRefresh: Date?
+    var notice: String?
     /// Sessions that were running when the login changed; they keep the old account until restarted.
-    @Published var pendingRestart: PendingRestart?
-    @Published var autoSwitch: Bool = UserDefaults.standard.bool(forKey: "autoSwitch") {
+    var pendingRestart: PendingRestart?
+    var autoSwitch: Bool = UserDefaults.standard.bool(forKey: "autoSwitch") {
         didSet { UserDefaults.standard.set(autoSwitch, forKey: "autoSwitch"); if autoSwitch { autoSwitchIfNeeded() } }
     }
     /// Shows the smallest active headroom as text next to the menu bar glass.
-    @Published var showPercent: Bool = UserDefaults.standard.bool(forKey: "showPercent") {
+    var showPercent: Bool = UserDefaults.standard.bool(forKey: "showPercent") {
         didSet { UserDefaults.standard.set(showPercent, forKey: "showPercent") }
     }
     /// Newer GitHub release than the running build, if any.
-    @Published var update: Update?
+    var update: Update?
+    /// Whether this app is registered as a login item. Stored so the menu toggle updates.
+    var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
     struct Update { let version: String; let url: URL }
 
-    private var timer: Timer?
-    private var updateTimer: Timer?
-    private var noticeTask: Task<Void, Never>?
-    private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var updateTimer: Timer?
+    @ObservationIgnored private var noticeTask: Task<Void, Never>?
 
     init() {
         reload()
@@ -44,8 +46,6 @@ final class Store: ObservableObject {
 
     // MARK: Launch at login
 
-    var launchAtLogin: Bool { SMAppService.mainApp.status == .enabled }
-
     func setLaunchAtLogin(_ on: Bool) {
         do {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -53,7 +53,7 @@ final class Store: ObservableObject {
             Log.line("login item: \(error)")
             show("Could not change the login item: \(error.localizedDescription)")
         }
-        objectWillChange.send()
+        launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     // MARK: Updates
@@ -128,30 +128,22 @@ final class Store: ObservableObject {
         Task { await refreshAll() }
     }
 
-    /// Refreshes every account. A reload while one is in flight joins it rather than starting a
-    /// second, and `refreshing` is always cleared on exit so the spinner can never stick. Each
+    /// Refreshes every account. A call while one is already running is skipped, and `refreshing`
+    /// is always cleared on exit, so the flag (and the spinner it drives) can never stick. Each
     /// request has a 30-second resource timeout, so this cannot hang across sleep.
     func refreshAll() async {
-        if let task = refreshTask { await task.value; return }
-        let task = Task { @MainActor in
-            defer { refreshing = false; refreshTask = nil }
-            refreshing = true
-            let start = Date()
-            Log.line("refresh start accounts=\(accounts.count)")
-            await withTaskGroup(of: Void.self) { group in
-                for a in accounts { group.addTask { await self.refresh(a.id) } }
-            }
-            lastRefresh = Date()
-            Log.line("refresh done")
-            if autoSwitch { autoSwitchIfNeeded() }
-            notifyTokenMax()
-            notifyLowQuota()
-            // Keep the spinner up long enough to be seen even when the requests finish instantly.
-            let elapsed = Date().timeIntervalSince(start)
-            if elapsed < 0.6 { try? await Task.sleep(nanoseconds: UInt64((0.6 - elapsed) * 1_000_000_000)) }
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
+        Log.line("refresh start accounts=\(accounts.count)")
+        await withTaskGroup(of: Void.self) { group in
+            for a in accounts { group.addTask { await self.refresh(a.id) } }
         }
-        refreshTask = task
-        await task.value
+        lastRefresh = Date()
+        Log.line("refresh done")
+        if autoSwitch { autoSwitchIfNeeded() }
+        notifyTokenMax()
+        notifyLowQuota()
     }
 
     /// One notification per active account per window when its headroom drops under 10%.
@@ -168,7 +160,9 @@ final class Store: ObservableObject {
             Notifier.post(title: "\(a.provider.tool) is running low",
                           body: "\(a.displayName): \(Int(w.leftPercent.rounded()))% left on \(w.label)\(reset). Switch accounts to keep going.")
         }
-        UserDefaults.standard.set(Array(seen).suffix(200), forKey: key)
+        // Must be a real Array: an ArraySlice is not a property-list type and UserDefaults raises
+        // an ObjC exception, which unwinds through the async caller and skips its defer.
+        UserDefaults.standard.set(Array(Array(seen).suffix(200)), forKey: key)
     }
 
     /// One notification per account per reset window when the tokenmax nudge appears.
@@ -183,7 +177,9 @@ final class Store: ObservableObject {
             Notifier.post(title: "Use it before it resets",
                           body: "\(a.provider.title) \(a.displayName): weekly window resets in \(n.hours) h with \(Int(n.window.usedPercent.rounded()))% used.")
         }
-        UserDefaults.standard.set(Array(seen).suffix(200), forKey: key)
+        // Must be a real Array: an ArraySlice is not a property-list type and UserDefaults raises
+        // an ObjC exception, which unwinds through the async caller and skips its defer.
+        UserDefaults.standard.set(Array(Array(seen).suffix(200)), forKey: key)
     }
 
     func refresh(_ id: String) async {
