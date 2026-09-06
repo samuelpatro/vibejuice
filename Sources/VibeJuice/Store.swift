@@ -128,18 +128,18 @@ final class Store: ObservableObject {
         Task { await refreshAll() }
     }
 
-    /// A new refresh cancels one still in flight, so a request that hangs (typically across
-    /// sleep) can never block later refreshes.
+    /// Refreshes every account. A reload while one is in flight joins it rather than starting a
+    /// second, and `refreshing` is always cleared on exit so the spinner can never stick. Each
+    /// request has a 30-second resource timeout, so this cannot hang across sleep.
     func refreshAll() async {
-        refreshTask?.cancel()
+        if let task = refreshTask { await task.value; return }
         let task = Task { @MainActor in
+            defer { refreshing = false; refreshTask = nil }
             refreshing = true
             Log.line("refresh start accounts=\(accounts.count)")
             await withTaskGroup(of: Void.self) { group in
                 for a in accounts { group.addTask { await self.refresh(a.id) } }
             }
-            guard !Task.isCancelled else { return }
-            refreshing = false
             lastRefresh = Date()
             Log.line("refresh done")
             if autoSwitch { autoSwitchIfNeeded() }
@@ -200,7 +200,6 @@ final class Store: ObservableObject {
             update(id) { $0.status = (creds.expiresAt.map { $0 < Date() } ?? false) ? .expired : .noData; $0.updatedAt = Date() }
             return
         }
-        guard !Task.isCancelled else { return }
         update(id) { a in
             switch result {
             case .success(let r):

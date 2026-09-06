@@ -3,7 +3,18 @@ import SwiftUI
 struct PopoverView: View {
     @EnvironmentObject var store: Store
     @Environment(\.openWindow) private var openWindow
-    @State private var spin = 0.0
+    @State private var busy = false
+
+    /// Shows the spinner for at least most of a second so a fast refresh still visibly answers.
+    private func refresh() {
+        guard !busy else { return }
+        busy = true
+        store.reload()
+        Task { @MainActor in
+            await store.refreshAll()   // joins the run reload() just started, ends when it does
+            busy = false
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,14 +65,8 @@ struct PopoverView: View {
             Spacer(minLength: 8)
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
-                    IconCircle(systemName: "arrow.clockwise")
-                        .rotationEffect(.degrees(spin))
-                        .onTapGesture {
-                            // One full turn per tap, so the click always answers even when the
-                            // refresh finishes in a blink.
-                            withAnimation(.easeInOut(duration: 0.7)) { spin += 360 }
-                            store.reload()
-                        }
+                    IconCircle(systemName: "arrow.clockwise", busy: busy)
+                        .onTapGesture { refresh() }
                         .help("Refresh")
                     Menu {
                         Toggle("Auto-switch when limit is hit", isOn: $store.autoSwitch)
@@ -368,13 +373,23 @@ enum Relative {
 struct IconCircle: View {
     let systemName: String
     var size: CGFloat = 28
+    /// Shows an AppKit spinner instead of the icon. It animates on its own timer, unlike a
+    /// SwiftUI rotation, which does not reliably run inside a menu bar window.
+    var busy = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        Image(systemName: systemName)
-            .font(.system(size: size * 0.42, weight: .medium))
-            .frame(width: size, height: size)
-            .contentShape(Circle())
-            .glassEffect(.regular.interactive(), in: .circle)
+        Group {
+            if busy {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: systemName)
+                    .font(.system(size: size * 0.42, weight: .medium))
+            }
+        }
+        .frame(width: size, height: size)
+        .contentShape(Circle())
+        .glassEffect(.regular.tint(GlassTint.lift(scheme)).interactive(), in: .circle)
     }
 }
 
@@ -428,6 +443,7 @@ struct AboutView: View {
 struct Pill: View {
     let text: String
     var prominent = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         Text(text)
@@ -435,6 +451,14 @@ struct Pill: View {
             .foregroundStyle(prominent ? Color.white : Color.primary)
             .padding(.horizontal, 10).frame(height: 24)
             .contentShape(Capsule())
-            .glassEffect(prominent ? .regular.tint(Color.accentColor).interactive() : .regular.interactive(), in: .capsule)
+            .glassEffect(.regular.tint(prominent ? Color.accentColor : GlassTint.lift(scheme)).interactive(), in: .capsule)
+    }
+}
+
+/// Plain glass sinks into the panel on a dark background. Native controls sit above it, so
+/// non-prominent controls get a light tint that reads as a button in both appearances.
+enum GlassTint {
+    static func lift(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.white.opacity(0.14) : Color.white.opacity(0.6)
     }
 }
