@@ -143,6 +143,10 @@ struct ProviderSection: View {
     @ViewBuilder
     private func rowMenu(_ a: Account) -> some View {
         Button("Refresh") { Task { await store.refresh(a.id) } }
+        if a.provider == .claude {
+            Button("Refresh token") { store.renewToken(a, force: true) }
+                .help("Runs one tiny Claude Code request as this account so Claude Code renews its token.")
+        }
         if a.provider == .codex, let n = a.manualResets, n > 0 {
             Button("Use a manual reset (\(n) left)") { Task { await store.consumeReset(a) } }
         }
@@ -211,6 +215,8 @@ struct AccountRow: View {
                  ? "Token expired. Start \(account.provider.tool) once and it refreshes."
                  : "Token expired. Switch to this account and start \(account.provider.tool) once.")
                 .font(.caption).foregroundStyle(.orange)
+        case .renewing:
+            Text("Refreshing token through \(account.provider.tool)…").font(.caption).foregroundStyle(.secondary)
         case .error(let msg):
             Text(msg).font(.caption).foregroundStyle(.orange)
         }

@@ -67,7 +67,7 @@ Click a row to switch. Running Claude Code sessions pick up the new account on t
 - **Claude**: the same windows `/usage` prints. Session is the 5-hour limit, Week is all models, and the model-scoped week is labeled with the model name Anthropic reports. Percent is used, the row shows how much is left.
 - **Codex**: the weekly limit, the plan (Pro 5x, Pro 20x, Plus, Team), the renewal date, and how many manual resets remain. The login is read from `auth.json`, or from the Keychain when `cli_auth_credentials_store` is `keyring` or `auto` in `~/.codex/config.toml`. In that case macOS may ask once whether `security` may read the "Codex Auth" item; choose Always Allow.
 - **Grok**: the weekly (or monthly) limit and the reset time that Grok Build's `/usage` prints, plus the subscription tier (SuperGrok, X Premium). Same proxy calls as the CLI, which is open source.
-- Only the active account's token is refreshed by its CLI. An inactive account shows "Token expired" once its access token lapses. Switch to it and start the CLI once to refresh it.
+- Tokens are refreshed by the CLIs, never by VibeJuice. When a Claude account's token has expired, VibeJuice runs one minimal headless Claude Code request as that account (a staged config directory for inactive logins, the real one for the active login), so Claude Code renews the token itself, then reads the result back. This costs one tiny Haiku message from that account. Right-click a row for "Refresh token" to trigger it by hand. Codex and Grok tokens still refresh only when their CLI runs as that account.
 
 ## Development
 

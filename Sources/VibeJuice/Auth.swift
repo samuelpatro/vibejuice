@@ -413,7 +413,8 @@ enum Keychain {
     }
 
     static func delete(service: String, account: String) {
-        _ = run(["delete-generic-password", "-a", account, "-s", service])
+        let r = run(["delete-generic-password", "-a", account, "-s", service])
+        Log.line("keychain.delete \(service) status=\(r.status)")
     }
 
     private static func run(_ args: [String]) -> (status: Int32, stdout: Data, stderr: Data) {

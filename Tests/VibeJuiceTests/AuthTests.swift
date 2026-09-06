@@ -128,3 +128,21 @@ private func jwt(_ claims: [String: Any]) -> String {
         #expect(c?.expiresAt != nil)
     }
 }
+
+@Suite struct TokenRefreshTests {
+    @Test func serviceNameMatchesClaudeCodeScheme() {
+        let s = TokenRefresh.service(forConfigDir: "/Users/x/Library/Application Support/VibeJuice/refresh/abc")
+        #expect(s.hasPrefix("Claude Code-credentials-"))
+        let suffix = s.dropFirst("Claude Code-credentials-".count)
+        #expect(suffix.count == 8)
+        #expect(suffix.allSatisfy { $0.isHexDigit })
+        // Same directory, different Unicode normalization, same item.
+        #expect(TokenRefresh.service(forConfigDir: "/tmp/caf\u{E9}") == TokenRefresh.service(forConfigDir: "/tmp/cafe\u{301}"))
+    }
+
+    @Test func headlessArgumentsStayMinimal() {
+        #expect(!TokenRefresh.arguments.contains("--bare"))
+        #expect(TokenRefresh.arguments.contains("-p"))
+        #expect(TokenRefresh.arguments.contains("haiku"))
+    }
+}

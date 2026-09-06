@@ -137,7 +137,7 @@ final class Store {
         switch account.provider {
         case .claude:
             guard let creds = ClaudeCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
-            if let exp = creds.expiresAt, exp < Date() { update(id) { $0.status = .expired; $0.plan = creds.planLabel }; return }
+            if let exp = creds.expiresAt, exp < Date() { update(id) { $0.plan = creds.planLabel }; renewToken(account); return }
             do { result = .success(try await UsageClient.claude(creds)) } catch { result = .failure(error) }
         case .codex:
             guard let creds = CodexCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
@@ -164,6 +164,49 @@ final class Store {
                 }
                 else if case UsageError.http(let code, _) = e { a.status = .error("HTTP \(code)") }
                 else { a.status = .error((e as? URLError)?.localizedDescription ?? "Request failed") }
+            }
+        }
+    }
+
+    // MARK: Token refresh
+
+    @ObservationIgnored private var renewing: Set<String> = []
+    @ObservationIgnored private var renewAttempts: [String: Date] = [:]
+
+    /// Has Claude Code refresh an expired login (see `TokenRefresh`). Automatic attempts happen at
+    /// most once an hour per account; `force` is the user's right-click.
+    func renewToken(_ account: Account, force: Bool = false) {
+        let id = account.id
+        guard account.provider == .claude, !renewing.contains(id) else { return }
+        guard force || renewAttempts[id].map({ Date().timeIntervalSince($0) > 3600 }) ?? true else {
+            update(id) { $0.status = .expired }
+            return
+        }
+        renewing.insert(id)
+        renewAttempts[id] = Date()
+        update(id) { $0.status = .renewing }
+        Log.line("token refresh start active=\(account.isActive)")
+        let payload = account.payload, active = account.isActive
+        Task {
+            let outcome: Result<Data?, Error> = await Task.detached {
+                do {
+                    if active { try TokenRefresh.claudeActive(payload: payload); return .success(nil) }
+                    return .success(try TokenRefresh.claude(payload: payload))
+                } catch { return .failure(error) }
+            }.value
+            renewing.remove(id)
+            switch outcome {
+            case .success(let fresh):
+                if let fresh {
+                    Logins.restore(account.provider, email: account.email, payload: fresh)
+                    update(id) { $0.payload = fresh; $0.status = .loading }
+                }
+                await rescan()
+                await refresh(id)
+            case .failure(let e):
+                Log.line("token refresh failed: \(e)")
+                update(id) { $0.status = .expired }
+                show("Couldn't refresh \(account.displayName): \(e.localizedDescription)")
             }
         }
     }

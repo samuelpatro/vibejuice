@@ -64,6 +64,8 @@ enum AccountStatus {
     case ok([QuotaWindow])
     case noData
     case expired
+    /// Claude Code is being run to refresh the expired token.
+    case renewing
     case error(String)
 
     var windows: [QuotaWindow] {
