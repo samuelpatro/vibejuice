@@ -71,7 +71,7 @@ struct QuotaWindow: Identifiable {
     /// "Week, …", "Weekly", Codex's "<pool> week" extras, or an id that says so.
     var isWeekly: Bool { label.lowercased().contains("week") || id.contains("week") || id.hasSuffix("-wk") }
 
-    /// How long the window is, when the label says so: the pace tick needs it.
+    /// How long the window is, when the label says so: the reset caption and pace hint need it.
     var length: TimeInterval? {
         if isWeekly { return 7 * 86400 }
         switch label {

@@ -64,7 +64,7 @@ Click a row to switch. Running Claude Code sessions pick up the new account on t
 
 ## What the numbers mean
 
-- Every window is a bar with its used percent and, underneath, when it resets (weekday and time for windows of a day or longer). The thin tick on the bar marks where an even spend across the window would be right now: fill past the tick means you are burning faster than the window refills.
+- Every window is a bar with its used percent and, underneath, when it resets (weekday and time for windows of a day or longer). Hover a bar for the full reset time and where an even spend across the window would be right now.
 - **Claude**: the same windows `/usage` prints. Session is the 5-hour limit, Week is all models, and the model-scoped week is labeled with the model name Anthropic reports. Percent is used, the row header shows how much is left.
 - **Codex**: the weekly limit, the plan (Pro 5x, Pro 20x, Plus, Team), the renewal date, and how many manual resets remain. The login is read from `auth.json`, or from the Keychain when `cli_auth_credentials_store` is `keyring` or `auto` in `~/.codex/config.toml`. In that case macOS may ask once whether `security` may read the "Codex Auth" item; choose Always Allow.
 - **Grok**: the weekly (or monthly) limit and the reset time that Grok Build's `/usage` prints, plus the subscription tier (SuperGrok, X Premium). Same proxy calls as the CLI, which is open source.

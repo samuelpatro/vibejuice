@@ -305,7 +305,7 @@ struct Meter: View {
                     .foregroundStyle(window.exhausted ? Color.red : window.usedPercent >= 80 ? Color.orange : (window.secondary ? Color.secondary : Color.primary))
                     .lineLimit(1).fixedSize()
             }
-            Bar(fraction: min(max(window.usedPercent, 0), 100) / 100, pace: pace, color: barColor)
+            Bar(fraction: min(max(window.usedPercent, 0), 100) / 100, color: barColor)
                 .frame(height: 6)
                 .opacity(window.secondary ? 0.75 : 1)
             Text(resetText)
@@ -336,7 +336,7 @@ struct Meter: View {
         }
     }
 
-    /// Where an even spend would be right now, 0…1, when the window's length is known.
+    /// Where an even spend would be right now, 0…1, when the window's length is known. Hover only.
     private var pace: Double? {
         guard let reset = window.resetsAt, let length = window.length else { return nil }
         let left = reset.timeIntervalSince(now)
@@ -363,11 +363,9 @@ struct Meter: View {
     }
 }
 
-/// Track, fill, and a tick at the even-pace point. Ahead of the tick means spending faster than
-/// the window refills.
+/// Track and fill. The even-pace comparison lives in the hover text, not on the bar.
 struct Bar: View {
     let fraction: Double
-    let pace: Double?
     let color: Color
 
     var body: some View {
@@ -375,11 +373,6 @@ struct Bar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(.quaternary)
                 Capsule().fill(color).frame(width: max(geo.size.height, geo.size.width * fraction))
-                if let pace {
-                    Rectangle().fill(Color.primary.opacity(0.45))
-                        .frame(width: 1.5, height: geo.size.height + 4)
-                        .offset(x: geo.size.width * pace - 0.75, y: -2)
-                }
             }
         }
     }
