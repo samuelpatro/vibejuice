@@ -163,7 +163,7 @@ struct AccountRow: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
                 ZStack {
                     Circle().strokeBorder(account.isActive ? Color.accentColor : Color.secondary.opacity(0.6), lineWidth: 1.5)
@@ -176,21 +176,16 @@ struct AccountRow: View {
                     .fixedSize()
                     .help(account.displayName)
                 if let plan = account.plan { Chip(text: plan) }
+                // Extras live up here so the meter row below is meters only and never squeezed.
+                if account.provider == .codex, case .ok = account.status { codexExtras }
+                if let n = account.tokenMax { TokenMaxChip(nudge: n) }
                 Spacer(minLength: 6)
                 trailing
             }
-            HStack(alignment: .bottom, spacing: 12) {
-                meters
-                if account.provider == .codex, case .ok = account.status {
-                    codexExtras
-                }
-                if let n = account.tokenMax {
-                    TokenMaxChip(nudge: n)
-                }
-            }
-            .padding(.leading, 20)
+            meters
+                .padding(.leading, 20)
         }
-        .padding(.horizontal, 10).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(account.isActive ? Color.accentColor.opacity(0.18) : hovering ? Color.primary.opacity(0.06) : .clear)
@@ -203,7 +198,7 @@ struct AccountRow: View {
     private var meters: some View {
         switch account.status {
         case .ok(let windows):
-            HStack(spacing: 14) {
+            HStack(spacing: 18) {
                 ForEach(windows) { w in Meter(window: w) }
             }
         case .loading:
@@ -224,19 +219,17 @@ struct AccountRow: View {
     private var trailing: some View {
         if case .ok = account.status {
             let left = Int((account.headroom ?? 0).rounded())
-            HStack(spacing: 6) {
-                Text("\(left)% left")
-                    .font(.callout.weight(.semibold)).monospacedDigit()
-                    .foregroundStyle(account.spent ? Color.red : left <= 20 ? Color.orange : Color.primary)
-                Text(subline).font(.caption).monospacedDigit().foregroundStyle(.secondary)
-            }
-            .lineLimit(1).fixedSize()
+            // Just the headline number: each meter below carries its own percent and reset.
+            Text("\(left)% left")
+                .font(.callout.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(account.spent ? Color.red : left <= 20 ? Color.orange : Color.primary)
+                .lineLimit(1).fixedSize()
         } else if case .expired = account.status {
             Text("Expired").font(.callout.weight(.medium)).foregroundStyle(.orange)
         }
     }
 
-    /// Renewal date and manual resets sit at the end of the meter line, where Codex has room.
+    /// Renewal date and manual resets, next to the plan chip.
     private var codexExtras: some View {
         HStack(spacing: 8) {
             if let r = account.renewsAt {
@@ -250,11 +243,6 @@ struct AccountRow: View {
         .lineLimit(1).fixedSize()
     }
 
-    private var subline: String {
-        if account.spent, let r = account.soonestReset { return "back \(Relative.text(to: r)) · \(r.formatted(.dateTime.hour().minute()))" }
-        if let r = account.nextReset { return "resets \(Relative.text(to: r))" }
-        return account.status.windows.allSatisfy { $0.usedPercent == 0 } ? "unused" : ""
-    }
 }
 
 /// "Use it before it resets": weekly quota mostly unused and the reset is hours away.
@@ -293,7 +281,7 @@ struct Meter: View {
     var now: Date = Date()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(shortLabel)
                     .font(.caption)
