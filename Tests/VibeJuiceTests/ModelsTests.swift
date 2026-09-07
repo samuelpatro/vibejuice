@@ -167,3 +167,15 @@ private func acct(_ p: Provider, _ email: String, used: Double? = nil, active: B
         #expect(Store.due([fresh, stale, never], force: true, now: now).count == 3)
     }
 }
+
+@Suite struct WindowLengthTests {
+    @Test func lengthFromLabel() {
+        func w(_ id: String, _ label: String) -> QuotaWindow { QuotaWindow(id: id, label: label, usedPercent: 0, resetsAt: nil, secondary: false) }
+        #expect(w("session", "Session").length == 18000.0)
+        #expect(w("primary", "5-hour").length == 18000.0)
+        #expect(w("weekly_all", "Week, all models").length == 604800.0)
+        #expect(w("grok-week", "Weekly limit").length == 604800.0)
+        #expect(w("extra-x-5h", "GPT 5h").length == 18000.0)
+        #expect(w("x", "Limit").length == nil)
+    }
+}

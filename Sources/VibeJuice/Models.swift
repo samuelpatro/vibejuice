@@ -70,6 +70,17 @@ struct QuotaWindow: Identifiable {
     var exhausted: Bool { usedPercent >= 99.5 }
     /// "Week, …", "Weekly", Codex's "<pool> week" extras, or an id that says so.
     var isWeekly: Bool { label.lowercased().contains("week") || id.contains("week") || id.hasSuffix("-wk") }
+
+    /// How long the window is, when the label says so: the pace tick needs it.
+    var length: TimeInterval? {
+        if isWeekly { return 7 * 86400 }
+        switch label {
+        case "Session", "5-hour": return 5 * 3600
+        case "Daily": return 86400
+        case "Monthly limit": return 30 * 86400
+        default: return label.hasSuffix(" 5h") ? 5 * 3600 : nil
+        }
+    }
 }
 
 struct TokenMaxNudge {

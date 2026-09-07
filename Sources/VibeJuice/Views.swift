@@ -179,7 +179,7 @@ struct AccountRow: View {
                 Spacer(minLength: 6)
                 trailing
             }
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .bottom, spacing: 12) {
                 meters
                 if account.provider == .codex, case .ok = account.status {
                     codexExtras
@@ -290,22 +290,28 @@ struct Chip: View {
 /// One quota window on a single line: short label, bar, used percent.
 struct Meter: View {
     let window: QuotaWindow
+    var now: Date = Date()
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(shortLabel)
-                .font(.caption)
-                .foregroundStyle(window.secondary ? .tertiary : .secondary)
-                .lineLimit(1).fixedSize()
-            Gauge(value: min(max(window.usedPercent, 0), 100), in: 0...100) { EmptyView() }
-                .gaugeStyle(.accessoryLinearCapacity)
-                .tint(barColor)
-                .opacity(window.secondary ? 0.7 : 1)
-            Text("\(Int(window.usedPercent.rounded()))%")
-                .font(.caption.weight(.semibold)).monospacedDigit()
-                .foregroundStyle(window.exhausted ? Color.red : window.usedPercent >= 80 ? Color.orange : (window.secondary ? Color.secondary : Color.primary))
-                .lineLimit(1).fixedSize()
-                .frame(minWidth: 32, alignment: .trailing)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(shortLabel)
+                    .font(.caption)
+                    .foregroundStyle(window.secondary ? .tertiary : .secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(Int(window.usedPercent.rounded()))%")
+                    .font(.caption.weight(.semibold)).monospacedDigit()
+                    .foregroundStyle(window.exhausted ? Color.red : window.usedPercent >= 80 ? Color.orange : (window.secondary ? Color.secondary : Color.primary))
+                    .lineLimit(1).fixedSize()
+            }
+            Bar(fraction: min(max(window.usedPercent, 0), 100) / 100, pace: pace, color: barColor)
+                .frame(height: 6)
+                .opacity(window.secondary ? 0.75 : 1)
+            Text(resetText)
+                .font(.caption2).monospacedDigit()
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
         .help(helpText)
@@ -320,7 +326,8 @@ struct Meter: View {
     private var shortLabel: String {
         switch window.label {
         case "Session", "5-hour": return "5h"
-        case "Week, all models", "Weekly": return "Week"
+        case "Week, all models", "Weekly", "Weekly limit": return "Week"
+        case "Monthly limit": return "Month"
         case "Daily": return "1d"
         default:
             // "Week, Fable 5" -> "Fable 5"
@@ -329,10 +336,52 @@ struct Meter: View {
         }
     }
 
+    /// Where an even spend would be right now, 0…1, when the window's length is known.
+    private var pace: Double? {
+        guard let reset = window.resetsAt, let length = window.length else { return nil }
+        let left = reset.timeIntervalSince(now)
+        guard left > 0, left <= length else { return nil }
+        return 1 - left / length
+    }
+
+    /// "in 3 h", and for windows a day or longer also the weekday and time of the reset.
+    private var resetText: String {
+        guard let r = window.resetsAt else { return "" }
+        let rel = Relative.text(to: r, now: now)
+        let lead = window.exhausted ? "back \(rel)" : rel
+        if (window.length ?? 0) >= 86400 || r.timeIntervalSince(now) >= 36 * 3600 {
+            return "\(lead) · \(r.formatted(.dateTime.weekday(.abbreviated).hour().minute()))"
+        }
+        return "\(lead) · \(r.formatted(.dateTime.hour().minute()))"
+    }
+
     private var helpText: String {
         var t = "\(window.label): \(Int(window.usedPercent.rounded()))% used"
-        if let r = window.resetsAt { t += " · \(window.exhausted ? "back" : "resets") \(Relative.text(to: r)) · \(r.formatted(.dateTime.month().day().hour().minute()))" }
+        if let r = window.resetsAt { t += " · \(window.exhausted ? "back" : "resets") \(Relative.text(to: r, now: now)) · \(r.formatted(.dateTime.month().day().hour().minute()))" }
+        if let p = pace { t += " · even pace would be \(Int((p * 100).rounded()))%" }
         return t
+    }
+}
+
+/// Track, fill, and a tick at the even-pace point. Ahead of the tick means spending faster than
+/// the window refills.
+struct Bar: View {
+    let fraction: Double
+    let pace: Double?
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule().fill(color).frame(width: max(geo.size.height, geo.size.width * fraction))
+                if let pace {
+                    Rectangle().fill(Color.primary.opacity(0.45))
+                        .frame(width: 1.5, height: geo.size.height + 4)
+                        .offset(x: geo.size.width * pace - 0.75, y: -2)
+                }
+            }
+        }
     }
 }
 
