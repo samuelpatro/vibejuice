@@ -70,8 +70,8 @@ enum MenuBarIcon {
         }
     }
 
-    /// One glass with stacked colored bands, one per provider (0…1 fill), then a bolt. A color image,
-    /// not a template, so the outline is drawn in the menu bar's current label color.
+    /// One glass with stacked colored bands, one per provider (0…1 fill), then a purple bolt. A color
+    /// image, not a template, so the outline is drawn in the menu bar's current label color.
     static func image(levels: [(Provider, Double)], bolt: Bool) -> NSImage {
         let gw: CGFloat = 12, gh: CGFloat = 13, inset: CGFloat = 1.5
         let width = inset * 2 + gw + (bolt ? 12 : 0)
@@ -119,10 +119,11 @@ enum MenuBarIcon {
             ctx.addLine(to: CGPoint(x: gx + gw * 0.92, y: gy + gh * 1.25))
             ctx.strokePath()
 
+            // Same purple as the tokenmax chip in the popover, so the two read as one signal. A
+            // template symbol ignores the current fill color, so the tint goes in via the palette.
             if bolt, let symbol = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 11, weight: .bold)) {
+                .withSymbolConfiguration(.init(pointSize: 11, weight: .bold).applying(.init(paletteColors: [.systemPurple]))) {
                 let s = symbol.size
-                ink.set()
                 symbol.draw(in: CGRect(x: rect.maxX - s.width - 1, y: rect.midY - s.height / 2, width: s.width, height: s.height),
                             from: .zero, operation: .sourceOver, fraction: 1)
             }
