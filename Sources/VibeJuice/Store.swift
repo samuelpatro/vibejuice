@@ -148,14 +148,14 @@ final class Store {
         let result: Result<UsageResult, Error>
         switch account.provider {
         case .claude:
-            guard let creds = ClaudeCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
+            guard let creds = ClaudeCredentials(payload: account.payload) else { update(id) { $0.status = .signedOut }; return }
             if let exp = creds.expiresAt, exp < Date() { update(id) { $0.plan = creds.planLabel }; renewToken(account); return }
             do { result = .success(try await UsageClient.claude(creds)) } catch { result = .failure(error) }
         case .codex:
-            guard let creds = CodexCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
+            guard let creds = CodexCredentials(payload: account.payload) else { update(id) { $0.status = .signedOut }; return }
             do { result = .success(try await UsageClient.codex(creds)) } catch { result = .failure(error) }
         case .grok:
-            guard let creds = GrokCredentials(payload: account.payload) else { update(id) { $0.status = .error("Unreadable login") }; return }
+            guard let creds = GrokCredentials(payload: account.payload) else { update(id) { $0.status = .signedOut }; return }
             if let exp = creds.expiresAt, exp < Date() { update(id) { $0.status = .expired }; return }
             do { result = .success(try await UsageClient.grok(creds)) } catch { result = .failure(error) }
         }
@@ -202,15 +202,14 @@ final class Store {
         Task {
             defer { renewing.remove(id) }
             do {
-                if active {
-                    try await TokenRefresh.claudeActive(payload: payload, accountId: id)
-                } else {
-                    let fresh = try await TokenRefresh.claude(payload: payload, accountId: id)
-                    // Forgotten while renewing: do not put it back.
-                    guard accounts.contains(where: { $0.id == id }) else { return }
-                    try await Logins.restore(account.provider, email: account.email, payload: fresh)
-                    update(id) { $0.payload = fresh; $0.status = .loading }
-                }
+                let fresh = try await TokenRefresh.claude(payload: payload, accountId: id)
+                // Forgotten while renewing: do not put it back.
+                guard accounts.contains(where: { $0.id == id }) else { return }
+                try await Logins.restore(account.provider, email: account.email, payload: fresh)
+                // The CLI's own slot gets the renewed login too, so a stub it left after a failed
+                // refresh of its own is replaced and the next `claude` works again.
+                if active { try await Logins.activate(account.provider, payload: fresh) }
+                update(id) { $0.payload = fresh; $0.status = .loading }
                 await rescan()
                 await refresh(id)
             } catch {

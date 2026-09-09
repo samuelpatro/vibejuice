@@ -93,6 +93,9 @@ enum AccountStatus {
     case loading
     case ok([QuotaWindow])
     case expired
+    /// The CLI cleared its credentials (a failed refresh does that) and the vault has nothing
+    /// better: only a new sign-in helps.
+    case signedOut
     /// Claude Code is being run to refresh the expired token.
     case renewing
     case error(String)

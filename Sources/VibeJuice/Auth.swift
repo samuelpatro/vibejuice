@@ -129,7 +129,9 @@ enum Logins {
                 do {
                     // If the snapshot fails the switch is aborted: overwriting the slot would lose
                     // the newest token of the login being left.
-                    if let main = readMain(provider) { try Vault.save(provider, email: main.email, payload: main.payload) }
+                    if let main = readMain(provider), hasCredentials(provider, main.payload) {
+                        try Vault.save(provider, email: main.email, payload: main.payload)
+                    }
                     try writeMain(provider, payload)
                     c.resume()
                 } catch { c.resume(throwing: error) }
@@ -155,7 +157,13 @@ enum Logins {
         var active: [Provider: String] = [:]
         for p in Provider.allCases {
             if let main = readMain(p) {
-                try? Vault.save(p, email: main.email, payload: main.payload)
+                // A CLI that failed to refresh leaves a stub without tokens behind. That stub must
+                // not replace the vault's last good snapshot, which may still renew.
+                if hasCredentials(p, main.payload) {
+                    try? Vault.save(p, email: main.email, payload: main.payload)
+                } else {
+                    Log.line("\(p.rawValue) main: signed out")
+                }
                 active[p] = main.email.lowercased()
             } else {
                 Log.line("\(p.rawValue) main: none")
@@ -171,6 +179,15 @@ enum Logins {
 
     static func writeMain(_ p: Provider, _ payload: Data) throws {
         switch p { case .claude: try ClaudeMain.write(payload); case .codex: try CodexMain.write(payload); case .grok: try GrokMain.write(payload) }
+    }
+
+    /// Whether the payload carries a usable token, whatever else it says about the account.
+    static func hasCredentials(_ p: Provider, _ payload: Data) -> Bool {
+        switch p {
+        case .claude: ClaudeCredentials(payload: payload) != nil
+        case .codex: CodexCredentials(payload: payload) != nil
+        case .grok: GrokCredentials(payload: payload) != nil
+        }
     }
 
     static func planLabel(_ p: Provider, _ payload: Data) -> String? {

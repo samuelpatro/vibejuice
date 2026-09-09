@@ -2,12 +2,11 @@ import CryptoKit
 import Foundation
 
 /// Gets an expired Claude login refreshed without VibeJuice ever calling an OAuth server: the CLI
-/// does it. For an inactive login the payload is staged where a throwaway Claude Code config dir
-/// looks for it, one minimal headless request runs so Claude Code refreshes and stores the new
-/// tokens, and the result is read back and the staging removed. For the active login the same
-/// throwaway config dir points at Claude Code's default Keychain item, so it refreshes in place.
-/// Everything runs on one serial queue: two renewals never overlap, and no cooperative thread
-/// is ever parked behind a child process.
+/// does it. The vault's payload is staged where a throwaway Claude Code config dir looks for it,
+/// one minimal headless request runs so Claude Code refreshes and stores the new tokens, and the
+/// result is read back and the staging removed. The caller decides where the result goes (the
+/// vault, and the CLI's own slot when the account is active). Everything runs on one serial
+/// queue: two renewals never overlap, and no cooperative thread is ever parked behind a child.
 enum TokenRefresh {
     enum Failure: LocalizedError {
         case noCLI
@@ -53,14 +52,9 @@ enum TokenRefresh {
     /// that mode skips the credential lookup and reports "Not logged in".
     static let arguments = ["-p", "Reply with ok.", "--model", "haiku"]
 
-    /// Refreshes an inactive login and returns the payload with the new tokens.
+    /// Returns the payload with the new tokens.
     static func claude(payload: Data, accountId: String) async throws -> Data {
         try await onQueue { try claudeNow(payload: payload, accountId: accountId) }
-    }
-
-    /// Refreshes the active login in place; the next scan picks it up from the CLI's own store.
-    static func claudeActive(payload: Data, accountId: String) async throws {
-        try await onQueue { try claudeActiveNow(payload: payload, accountId: accountId) }
     }
 
     /// Removes staging left behind by a crash or force quit: every directory under the staging
@@ -106,17 +100,6 @@ enum TokenRefresh {
         var merged = root
         merged["claudeAiOauth"] = freshOauth
         return try JSONSerialization.data(withJSONObject: merged)
-    }
-
-    /// A throwaway config dir (so none of the user's hooks, plugins or MCP servers load) with
-    /// CLAUDE_SECURESTORAGE_CONFIG_DIR empty, which makes Claude Code use its default
-    /// "Claude Code-credentials" item.
-    private static func claudeActiveNow(payload: Data, accountId: String) throws {
-        guard let bin = claudeBinary() else { throw Failure.noCLI }
-        let root = (try? JSONSerialization.jsonObject(with: payload) as? [String: Any]) ?? [:]
-        let dir = try stage(root, accountId: accountId)
-        defer { try? FileManager.default.removeItem(atPath: dir) }
-        try run(bin, cwd: dir, env: ["CLAUDE_CONFIG_DIR": dir, "CLAUDE_SECURESTORAGE_CONFIG_DIR": ""])
     }
 
     /// Creates the staging dir with a `.claude.json` that skips onboarding and names the account.

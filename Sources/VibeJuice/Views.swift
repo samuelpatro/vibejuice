@@ -137,6 +137,7 @@ struct ProviderSection: View {
         if let plan = a.plan { parts.append(plan) }
         if let h = a.headroom { parts.append("\(Int(h.rounded())) percent left") }
         if case .expired = a.status { parts.append("token expired") }
+        if case .signedOut = a.status { parts.append("signed out") }
         parts.append(a.isActive ? "active" : "switch to this account")
         return parts.joined(separator: ", ")
     }
@@ -159,6 +160,7 @@ struct ProviderSection: View {
 // MARK: - Row
 
 struct AccountRow: View {
+    @Environment(Store.self) private var store
     let account: Account
     @State private var hovering = false
 
@@ -210,6 +212,9 @@ struct AccountRow: View {
                 .font(.caption).foregroundStyle(.orange)
         case .renewing:
             Text("Refreshing token through \(account.provider.tool)…").font(.caption).foregroundStyle(.secondary)
+        case .signedOut:
+            Text("\(account.provider.tool) signed this account out. Sign in again to keep using it.")
+                .font(.caption).foregroundStyle(.orange)
         case .error(let msg):
             Text(msg).font(.caption).foregroundStyle(.orange)
         }
@@ -226,6 +231,10 @@ struct AccountRow: View {
                 .lineLimit(1).fixedSize()
         } else if case .expired = account.status {
             Text("Expired").font(.callout.weight(.medium)).foregroundStyle(.orange)
+        } else if case .signedOut = account.status {
+            Pill(text: "Sign in", prominent: true)
+                .tapTarget("Sign in to \(account.provider.tool) again") { store.addAccount(account.provider) }
+                .help("Opens a terminal with \(account.provider.loginCommand).")
         }
     }
 

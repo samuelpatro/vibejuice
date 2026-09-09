@@ -168,3 +168,13 @@ private func jwt(_ claims: [String: Any]) -> String {
         #expect(Keychain.interactiveLineLimit > 2000)
     }
 }
+
+@Suite struct HasCredentialsTests {
+    @Test func stubWithoutTokensDoesNotCount() {
+        let stub = Data("{\"claudeAiOauth\":{\"scopes\":[],\"subscriptionType\":\"max\"},\"oauthAccount\":{\"emailAddress\":\"a@b.c\"}}".utf8)
+        let real = Data("{\"claudeAiOauth\":{\"accessToken\":\"t\",\"expiresAt\":1},\"oauthAccount\":{\"emailAddress\":\"a@b.c\"}}".utf8)
+        #expect(!Logins.hasCredentials(.claude, stub))
+        #expect(Logins.hasCredentials(.claude, real))
+        #expect(!Logins.hasCredentials(.codex, Data("{\"tokens\":{}}".utf8)))
+    }
+}
