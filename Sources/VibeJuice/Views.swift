@@ -213,7 +213,7 @@ struct AccountRow: View {
         case .renewing:
             Text("Refreshing token through \(account.provider.tool)…").font(.caption).foregroundStyle(.secondary)
         case .signedOut:
-            Text("\(account.provider.tool) signed this account out. Sign in again to keep using it.")
+            Text("This login can no longer be renewed. Sign in again to keep using it.")
                 .font(.caption).foregroundStyle(.orange)
         case .error(let msg):
             Text(msg).font(.caption).foregroundStyle(.orange)

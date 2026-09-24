@@ -149,10 +149,13 @@ final class Store {
         switch account.provider {
         case .claude:
             guard let creds = ClaudeCredentials(payload: account.payload) else { update(id) { $0.status = .signedOut }; return }
+            if deadSessions[id] == account.payload { update(id) { $0.status = .signedOut }; return }
             if let exp = creds.expiresAt, exp < Date() { update(id) { $0.plan = creds.planLabel }; renewToken(account); return }
             do { result = .success(try await UsageClient.claude(creds)) } catch { result = .failure(error) }
         case .codex:
             guard let creds = CodexCredentials(payload: account.payload) else { update(id) { $0.status = .signedOut }; return }
+            // Codex can't be renewed from here; an expired access token needs no request to know.
+            if let exp = creds.expiresAt, exp < Date() { update(id) { $0.status = .expired }; return }
             do { result = .success(try await UsageClient.codex(creds)) } catch { result = .failure(error) }
         case .grok:
             guard let creds = GrokCredentials(payload: account.payload) else { update(id) { $0.status = .signedOut }; return }
@@ -167,7 +170,7 @@ final class Store {
                 a.manualResets = r.manualResets
                 a.updatedAt = Date()
             case .failure(let e):
-                Log.line("refresh \(a.provider.rawValue) failed: \(e)")
+                Log.line("refresh \(a.provider.rawValue) failed: \(Log.describe(e))")
                 if case UsageError.unauthorized = e { a.status = .expired }
                 else if case UsageError.http(429, _) = e {
                     // Rate limited by the usage endpoint: keep the last good meters, they are
@@ -178,12 +181,18 @@ final class Store {
                 else { a.status = .error((e as? URLError)?.localizedDescription ?? "Request failed") }
             }
         }
+        // A 401 before the stored expiry means the access token was replaced or revoked; the
+        // CLI can usually get a new one (throttled like any automatic renewal).
+        if account.provider == .claude, case .failure(let e) = result, case UsageError.unauthorized = e { renewToken(account) }
     }
 
     // MARK: Token refresh
 
     @ObservationIgnored private var renewing: Set<String> = []
     @ObservationIgnored private var renewAttempts: [String: Date] = [:]
+    /// Payloads whose refresh token Claude Code rejected. Never retried automatically; a new
+    /// sign-in changes the payload and clears the entry by mismatch.
+    @ObservationIgnored private var deadSessions: [String: Data] = [:]
 
     /// Has Claude Code refresh an expired login (see `TokenRefresh`). Automatic attempts happen at
     /// most once an hour per account; `force` is the user's right-click.
@@ -212,10 +221,16 @@ final class Store {
                 update(id) { $0.payload = fresh; $0.status = .loading }
                 await rescan()
                 await refresh(id)
+            } catch TokenRefresh.Failure.sessionExpired {
+                Log.line("token refresh failed: session expired")
+                deadSessions[id] = payload
+                update(id) { $0.status = .signedOut }
+                if force { show("\(account.displayName) needs a new sign-in. Its saved login can no longer be renewed.") }
             } catch {
-                Log.line("token refresh failed: \(error)")
+                Log.line("token refresh failed: \(Log.describe(error))")
                 update(id) { $0.status = .expired }
-                show("Couldn't refresh \(account.displayName): \(error.localizedDescription)")
+                // Automatic attempts fail quietly; the row already says what is wrong.
+                if force { show("Couldn't refresh \(account.displayName): \(error.localizedDescription)") }
             }
         }
     }

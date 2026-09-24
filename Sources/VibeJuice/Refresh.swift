@@ -8,18 +8,35 @@ import Foundation
 /// vault, and the CLI's own slot when the account is active). Everything runs on one serial
 /// queue: two renewals never overlap, and no cooperative thread is ever parked behind a child.
 enum TokenRefresh {
-    enum Failure: LocalizedError {
+    enum Failure: LocalizedError, Equatable {
         case noCLI
         case cliFailed(String)
         case notRefreshed
+        /// The refresh token itself was rejected: no renewal will ever work, only a new sign-in.
+        case sessionExpired
 
         var errorDescription: String? {
             switch self {
             case .noCLI: "Claude Code not found"
             case .cliFailed(let s): s.isEmpty ? "Claude Code exited with an error" : s
             case .notRefreshed: "Claude Code did not refresh the token"
+            case .sessionExpired: "The saved login can no longer be renewed"
             }
         }
+    }
+
+    /// Turns the CLI's output into a failure. Claude Code prints errors in print mode on stdout,
+    /// so stderr is only preferred when it says something. Pure, so the messages are tested.
+    static func failure(stdout: String, stderr: String) -> Failure {
+        func lastLine(_ s: String) -> String? {
+            s.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty }
+        }
+        let line = lastLine(stderr) ?? lastLine(stdout) ?? ""
+        let lower = line.lowercased()
+        if lower.contains("could not be refreshed") || lower.contains("please run /login") || lower.contains("not logged in") {
+            return .sessionExpired
+        }
+        return .cliFailed(String(line.prefix(200)))
     }
 
     private static let queue = DispatchQueue(label: "dev.samuel.vibejuice.refresh", qos: .userInitiated)
@@ -125,8 +142,7 @@ enum TokenRefresh {
         Log.line("token refresh claude exit=\(r.status)\(r.timedOut ? " (timeout)" : "")")
         if r.timedOut { throw Failure.cliFailed("Claude Code took too long") }
         guard r.status == 0 else {
-            let stderr = String(decoding: r.stderr, as: UTF8.self)
-            throw Failure.cliFailed(stderr.split(separator: "\n").last.map { String($0.prefix(200)) } ?? "")
+            throw failure(stdout: String(decoding: r.stdout, as: UTF8.self), stderr: String(decoding: r.stderr, as: UTF8.self))
         }
     }
 }

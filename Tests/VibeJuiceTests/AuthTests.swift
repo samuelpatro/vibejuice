@@ -178,3 +178,47 @@ private func jwt(_ claims: [String: Any]) -> String {
         #expect(!Logins.hasCredentials(.codex, Data("{\"tokens\":{}}".utf8)))
     }
 }
+
+@Suite struct CodexExpiryTests {
+    @Test func accessTokenExpiryComesFromItsJWT() throws {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "tokens": ["access_token": jwt(["exp": 1_800_000_000]), "id_token": jwt(["email": "a@b.c"])],
+        ])
+        let c = try #require(CodexCredentials(payload: payload))
+        #expect(c.expiresAt == Date(timeIntervalSince1970: 1_800_000_000))
+    }
+
+    @Test func opaqueAccessTokenHasNoExpiry() throws {
+        let payload = try JSONSerialization.data(withJSONObject: ["tokens": ["access_token": "opaque"]])
+        #expect(try #require(CodexCredentials(payload: payload)).expiresAt == nil)
+    }
+}
+
+@Suite struct RenewalFailureTests {
+    @Test func deadSessionIsRecognisedOnStdout() {
+        // Claude Code prints its print-mode errors on stdout, with nothing on stderr.
+        #expect(TokenRefresh.failure(stdout: "Failed to authenticate: OAuth session expired and could not be refreshed\n", stderr: "") == .sessionExpired)
+        #expect(TokenRefresh.failure(stdout: "Not logged in · Please run /login", stderr: "") == .sessionExpired)
+    }
+
+    @Test func otherErrorsKeepTheirLastLine() {
+        #expect(TokenRefresh.failure(stdout: "ok so far\nAPI Error: 529 overloaded\n\n", stderr: "") == .cliFailed("API Error: 529 overloaded"))
+        #expect(TokenRefresh.failure(stdout: "stdout line", stderr: "stderr wins\n") == .cliFailed("stderr wins"))
+        #expect(TokenRefresh.failure(stdout: "", stderr: "") == .cliFailed(""))
+    }
+
+    @Test func transientRefreshRaceIsNotTreatedAsDead() {
+        let f = TokenRefresh.failure(stdout: "Failed to refresh OAuth token: another Claude Code process is refreshing it", stderr: "")
+        #expect(f != .sessionExpired)
+    }
+}
+
+@Suite struct LogDescribeTests {
+    @Test func errorsAreShortAndBodyFree() {
+        #expect(Log.describe(URLError(.notConnectedToInternet)) == "network -1009")
+        #expect(Log.describe(UsageError.http(429, "{\"error\": \"long body\"}")) == "http 429")
+        #expect(Log.describe(TokenRefresh.Failure.sessionExpired) == "The saved login can no longer be renewed")
+        struct Opaque: Error {}
+        #expect(Log.describe(Opaque()) == "Opaque")
+    }
+}

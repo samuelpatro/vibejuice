@@ -37,6 +37,8 @@ struct CodexCredentials {
     let email: String?
     let planType: String?
     let renewsAt: Date?
+    /// The access token's own `exp`. Past it every usage call is a guaranteed 401.
+    let expiresAt: Date?
 
     /// payload = the full auth.json
     init?(payload: Data) {
@@ -45,6 +47,7 @@ struct CodexCredentials {
               let access = tokens["access_token"] as? String, !access.isEmpty else { return nil }
         accessToken = access
         accountId = tokens["account_id"] as? String
+        expiresAt = (JWT.payload(access)?["exp"] as? Double).map { Date(timeIntervalSince1970: $0) }
         var mail: String?, plan: String?, until: Date?
         if let idToken = tokens["id_token"] as? String, let claims = JWT.payload(idToken) {
             mail = claims["email"] as? String
@@ -60,7 +63,7 @@ struct CodexCredentials {
         renewsAt = until
     }
 
-    init(planType: String?) { accessToken = ""; accountId = nil; email = nil; self.planType = planType; renewsAt = nil }
+    init(planType: String?) { accessToken = ""; accountId = nil; email = nil; self.planType = planType; renewsAt = nil; expiresAt = nil }
 
     var planLabel: String? {
         guard let p = planType?.lowercased(), !p.isEmpty else { return nil }
@@ -510,6 +513,14 @@ enum Log {
     static let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/VibeJuice/app.log")
     /// One serial queue: the caller (often the main actor) never waits on the file.
     private static let queue = DispatchQueue(label: "dev.samuel.vibejuice.log", qos: .utility)
+
+    /// A short, fixed-shape description for the log: no response bodies, no userInfo dumps.
+    static func describe(_ error: Error) -> String {
+        if let u = error as? URLError { return "network \(u.code.rawValue)" }
+        if let e = error as? UsageError { return e.description }
+        if let e = error as? LocalizedError, let d = e.errorDescription { return d }
+        return String(describing: type(of: error))
+    }
 
     static func line(_ text: String) {
         let stamp = Date().formatted(.dateTime.hour().minute().second())

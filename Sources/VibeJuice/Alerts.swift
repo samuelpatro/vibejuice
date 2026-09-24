@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// A notification that is due. `id` is stable per account and reset window, so each one is
 /// sent once and the decision is a pure function of the accounts and what was already sent.

@@ -30,7 +30,8 @@ struct VibeJuiceApp: App {
 
         // VIBEJUICE_DEBUG_WINDOW=1 also shows the popover as a plain window (screenshots, dev).
         Window("VibeJuice", id: "debug") {
-            PopoverView().environment(store)
+            // A plain window has no system glass behind it, unlike the menu bar panel.
+            PopoverView().environment(store).background(.regularMaterial)
         }
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(debugWindow ? .presented : .suppressed)
