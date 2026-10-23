@@ -222,3 +222,41 @@ private func jwt(_ claims: [String: Any]) -> String {
         #expect(Log.describe(Opaque()) == "Opaque")
     }
 }
+
+@Suite struct VaultSnapshotTests {
+    private let stored = Data("{\"tokens\":{\"access_token\":\"a1\",\"refresh_token\":\"r1\"}}".utf8)
+    private let pretty = Data("{\n  \"tokens\": {\n    \"refresh_token\": \"r1\",\n    \"access_token\": \"a1\"\n  }\n}\n".utf8)
+    private let rotated = Data("{\"tokens\":{\"access_token\":\"a2\",\"refresh_token\":\"r2\"}}".utf8)
+
+    @Test func unchangedLoginIsNotSavedAgain() {
+        // The vault keeps a compacted copy of the CLI's pretty-printed file.
+        let vault = [Logins.Entry(provider: .codex, email: "alex@example.com", payload: stored)]
+        #expect(Logins.unsaved([Logins.Entry(provider: .codex, email: "Alex@Example.com", payload: pretty)], in: vault).isEmpty)
+    }
+
+    @Test func rotatedOrNewLoginIsSaved() {
+        let vault = [Logins.Entry(provider: .codex, email: "alex@example.com", payload: stored)]
+        let current = [
+            Logins.Entry(provider: .codex, email: "alex@example.com", payload: rotated),
+            Logins.Entry(provider: .codex, email: "sam@example.com", payload: stored),
+            Logins.Entry(provider: .grok, email: "alex@example.com", payload: stored),
+        ]
+        #expect(Logins.unsaved(current, in: vault).map { "\($0.provider):\($0.email)" } == ["codex:alex@example.com", "codex:sam@example.com", "grok:alex@example.com"])
+    }
+
+    @Test func savedLoginReplacesItsOldSnapshotOnly() throws {
+        let vault = [
+            Logins.Entry(provider: .codex, email: "alex@example.com", payload: stored),
+            Logins.Entry(provider: .codex, email: "sam@example.com", payload: stored),
+        ]
+        let out = Logins.merged(Logins.Entry(provider: .codex, email: "Alex@Example.com", payload: rotated), into: vault)
+        #expect(out.count == 2)
+        #expect(try #require(out.first { $0.email == "alex@example.com" }).payload == rotated)
+        #expect(out.contains { $0.email == "sam@example.com" && $0.payload == stored })
+    }
+
+    @Test func nonJSONPayloadsCompareByBytes() {
+        #expect(Vault.same(Data("abc".utf8), Data("abc".utf8)))
+        #expect(!Vault.same(Data("abc".utf8), Data("abd".utf8)))
+    }
+}

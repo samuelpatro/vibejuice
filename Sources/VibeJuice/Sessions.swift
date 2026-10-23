@@ -141,10 +141,13 @@ enum Terminal {
 /// business in the popover, so its section is hidden until the CLI shows up.
 enum Installed {
     static func detect() -> Set<Provider> {
-        let path = Sessions.shell("/bin/zsh", ["-lc", "printf %s \"$PATH\""])
-        return providers(home: FileManager.default.homeDirectoryForCurrentUser,
-                         pathDirs: path.split(separator: ":").map(String.init))
+        providers(home: FileManager.default.homeDirectoryForCurrentUser, pathDirs: loginPath)
     }
+
+    /// The login shell's PATH, read once per launch rather than spawning zsh on every reload.
+    /// A CLI installed later still shows up through its config directory.
+    private static let loginPath: [String] = Sessions.shell("/bin/zsh", ["-lc", "printf %s \"$PATH\""])
+        .split(separator: ":").map(String.init)
 
     /// A CLI counts as installed when its config directory exists (`~/.claude`, `~/.codex`,
     /// `~/.grok`) or its binary sits in one of `pathDirs`. Pure apart from the file system.
