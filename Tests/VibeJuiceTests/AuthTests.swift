@@ -223,6 +223,26 @@ private func jwt(_ claims: [String: Any]) -> String {
     }
 }
 
+@Suite struct LogRotationTests {
+    @Test func oversizedLogMovesAsideReplacingTheOldOne() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("vibejuice-log-\(UUID().uuidString)")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let log = root.appendingPathComponent("app.log"), old = root.appendingPathComponent("app.log.1")
+        try Data("older".utf8).write(to: old)
+        try Data("small".utf8).write(to: log)
+
+        #expect(!Log.rotate(log, over: 10))
+        #expect(fm.fileExists(atPath: log.path))
+
+        try Data("twelve bytes".utf8).write(to: log)
+        #expect(Log.rotate(log, over: 10))
+        #expect(!fm.fileExists(atPath: log.path))
+        #expect(try Data(contentsOf: old) == Data("twelve bytes".utf8))
+    }
+}
+
 @Suite struct VaultSnapshotTests {
     private let stored = Data("{\"tokens\":{\"access_token\":\"a1\",\"refresh_token\":\"r1\"}}".utf8)
     private let pretty = Data("{\n  \"tokens\": {\n    \"refresh_token\": \"r1\",\n    \"access_token\": \"a1\"\n  }\n}\n".utf8)

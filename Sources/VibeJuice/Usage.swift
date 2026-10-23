@@ -301,11 +301,14 @@ enum UsageClient {
 enum DebugLog {
     static func redactedForTest(_ v: Any) -> Any { redact(v) }
 
+    /// Written only when the shape differs from the file's, not on every fetch.
     static func shape(_ name: String, _ json: Any) {
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/VibeJuice")
+        let file = dir.appendingPathComponent("\(name).json")
+        guard let data = try? JSONSerialization.data(withJSONObject: redact(json), options: [.prettyPrinted, .sortedKeys]),
+              data != (try? Data(contentsOf: file)) else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard let data = try? JSONSerialization.data(withJSONObject: redact(json), options: [.prettyPrinted, .sortedKeys]) else { return }
-        try? data.write(to: dir.appendingPathComponent("\(name).json"), options: .atomic)
+        try? data.write(to: file, options: .atomic)
     }
 
     static func redact(_ v: Any) -> Any {

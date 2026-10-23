@@ -571,7 +571,7 @@ enum JWT {
     }
 }
 
-/// Append-only diagnostics, status codes and counts only.
+/// Appended diagnostics, status codes and counts only.
 enum Log {
     static let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/VibeJuice/app.log")
     /// One serial queue: the caller (often the main actor) never waits on the file.
@@ -589,9 +589,35 @@ enum Log {
         let stamp = Date().formatted(.dateTime.hour().minute().second())
         let data = Data("\(stamp) \(text)\n".utf8)
         queue.async {
-            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(data); try? h.close() }
-            else { try? data.write(to: file) }
+            prepare()
+            if let h = try? FileHandle(forWritingTo: file) {
+                let size = h.seekToEndOfFile() + UInt64(data.count)
+                h.write(data); try? h.close()
+                if size > rotateBytes, rotate(file, over: rotateBytes) { CrashLog.reopen() }
+            } else { try? data.write(to: file) }
         }
+    }
+
+    /// Past this size the log moves to app.log.1, replacing the previous one, so the two stay
+    /// around 2 MB however long the app runs.
+    static let rotateBytes: UInt64 = 1_000_000
+
+    /// Rotates an oversized log left by the last run, once, before the first line and before
+    /// CrashLog opens the file.
+    private static let launched: Void = {
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        rotate(file, over: rotateBytes)
+    }()
+
+    static func prepare() { launched }
+
+    /// Moves `file` to `<file>.1` when it is larger than `limit`. Returns whether it moved.
+    @discardableResult
+    static func rotate(_ file: URL, over limit: UInt64) -> Bool {
+        let fm = FileManager.default
+        guard let size = (try? fm.attributesOfItem(atPath: file.path))?[.size] as? NSNumber, size.uint64Value > limit else { return false }
+        let old = file.appendingPathExtension("1")
+        try? fm.removeItem(at: old)
+        return (try? fm.moveItem(at: file, to: old)) != nil
     }
 }
