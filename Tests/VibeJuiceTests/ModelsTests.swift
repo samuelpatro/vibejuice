@@ -158,13 +158,36 @@ private func acct(_ p: Provider, _ email: String, used: Double? = nil, active: B
 }
 
 @Suite struct RefreshThrottleTests {
-    @Test func automaticPassSkipsRecentlyFetched() {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let fresh = acct(.claude, "fresh", updated: now.addingTimeInterval(-10))
-        let stale = acct(.claude, "stale", updated: now.addingTimeInterval(-120))
-        let never = acct(.claude, "never")
-        #expect(Store.due([fresh, stale, never], force: false, now: now).map(\.email) == ["stale", "never"])
-        #expect(Store.due([fresh, stale, never], force: true, now: now).count == 3)
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private func minutesAgo(_ m: Double) -> Date { now.addingTimeInterval(-m * 60) }
+
+    @Test func activeAccountsRefreshEveryPassInactiveOnesEveryHalfHour() {
+        let accounts = [
+            acct(.claude, "active-fresh", active: true, updated: now.addingTimeInterval(-10)),
+            acct(.claude, "active-last-pass", active: true, updated: minutesAgo(5)),
+            acct(.claude, "inactive-last-pass", updated: minutesAgo(5)),
+            acct(.claude, "inactive-sixth-pass", updated: minutesAgo(30).addingTimeInterval(5)),
+            acct(.claude, "never"),
+        ]
+        #expect(Store.due(accounts, force: false, now: now).map(\.email) == ["active-last-pass", "inactive-sixth-pass", "never"])
+        #expect(Store.due(accounts, force: true, now: now).count == 5)
+    }
+
+    @Test func rateLimitedAccountWaitsOutItsBackoffUnlessForced() {
+        var limited = acct(.claude, "limited", active: true, updated: minutesAgo(60))
+        limited.rateLimitedUntil = now.addingTimeInterval(60)
+        #expect(Store.due([limited], force: false, now: now).isEmpty)
+        #expect(Store.due([limited], force: true, now: now).count == 1)
+        #expect(Store.due([limited], force: false, now: now.addingTimeInterval(61)).count == 1)
+    }
+
+    @Test func backoffGrowsAndHonorsRetryAfter() {
+        #expect(Store.rateLimitBackoff(strikes: 1, retryAfter: nil) == 600)
+        #expect(Store.rateLimitBackoff(strikes: 2, retryAfter: nil) == 1200)
+        #expect(Store.rateLimitBackoff(strikes: 10, retryAfter: nil) == 7200)
+        #expect(Store.rateLimitBackoff(strikes: 1, retryAfter: 3000) == 3000)
+        #expect(Store.rateLimitBackoff(strikes: 1, retryAfter: 30) == 600)
+        #expect(Store.rateLimitBackoff(strikes: 1, retryAfter: 1e9) == 6 * 3600)
     }
 }
 

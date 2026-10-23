@@ -117,6 +117,10 @@ struct Account: Identifiable {
     var manualResets: Int?
     var renewsAt: Date?
     var updatedAt: Date?
+    /// Rate limited by the usage endpoint: automatic passes leave the account alone until then.
+    var rateLimitedUntil: Date?
+    /// 429s in a row, so each one backs off longer.
+    var rateLimitStrikes = 0
     var isActive = false
 
     static func id(_ provider: Provider, _ email: String) -> String { "\(provider.rawValue):\(email.lowercased())" }

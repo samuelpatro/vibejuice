@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Security
+import Synchronization
 
 // MARK: - Credential views over a payload
 
@@ -158,12 +159,13 @@ enum Logins {
     static func scanNow() -> Scan {
         Log.line("reload start")
         var active: [Provider: String] = [:]
+        var current: [Entry] = []
         for p in Provider.allCases {
             if let main = readMain(p) {
                 // A CLI that failed to refresh leaves a stub without tokens behind. That stub must
                 // not replace the vault's last good snapshot, which may still renew.
                 if hasCredentials(p, main.payload) {
-                    try? Vault.save(p, email: main.email, payload: main.payload)
+                    current.append(Entry(provider: p, email: main.email, payload: main.payload))
                 } else {
                     Log.line("\(p.rawValue) main: signed out")
                 }
@@ -172,8 +174,27 @@ enum Logins {
                 Log.line("\(p.rawValue) main: none")
             }
         }
-        let vault = Vault.list().map { Entry(provider: $0.0, email: $0.1, payload: $0.2) }
+        // The vault is listed first so each login is compared with what it already holds: a
+        // reload with nothing new writes nothing, a rotated token is still saved.
+        var vault = Vault.list().map { Entry(provider: $0.0, email: $0.1, payload: $0.2) }
+        for entry in unsaved(current, in: vault) {
+            guard (try? Vault.save(entry.provider, email: entry.email, payload: entry.payload)) != nil else { continue }
+            vault = merged(entry, into: vault)
+        }
         return Scan(vault: vault, active: active, installed: Installed.detect())
+    }
+
+    /// The current logins the vault does not already hold with the same content.
+    static func unsaved(_ current: [Entry], in vault: [Entry]) -> [Entry] {
+        current.filter { c in
+            !vault.contains { $0.provider == c.provider && $0.email == c.email.lowercased() && Vault.same($0.payload, c.payload) }
+        }
+    }
+
+    /// `vault` after `entry` was saved, in the form the next list returns it.
+    static func merged(_ entry: Entry, into vault: [Entry]) -> [Entry] {
+        let saved = Entry(provider: entry.provider, email: entry.email.lowercased(), payload: Vault.stored(entry.payload))
+        return vault.filter { !($0.provider == saved.provider && $0.email == saved.email) } + [saved]
     }
 
     static func readMain(_ p: Provider) -> MainLogin? {
@@ -346,15 +367,38 @@ enum Vault {
         return list
     }
 
+    /// Leaves the file alone when it already says the same thing.
     private static func writeIndex(_ list: [String]) {
+        guard let data = try? JSONEncoder().encode(Array(Set(list)).sorted()),
+              data != (try? Data(contentsOf: indexFile)) else { return }
         try? FileManager.default.createDirectory(at: indexFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(Array(Set(list)).sorted()) { try? data.write(to: indexFile, options: .atomic) }
+        try? data.write(to: indexFile, options: .atomic)
+    }
+
+    /// Payloads already read, each with the item's modification date at the time. A list reads
+    /// an item again only once that date moves, so an unchanged vault costs no `security` call.
+    private struct Cached: Sendable { let modified: Date; let payload: Data }
+    private static let cache = Mutex<[String: Cached]>([:])
+
+    /// The bytes the Keychain ends up holding for `payload` (see `Keychain.write`).
+    static func stored(_ payload: Data) -> Data {
+        Data(Keychain.singleLine(String(decoding: payload, as: UTF8.self)).utf8)
+    }
+
+    /// Same login content. Compared as JSON when both parse, since the vault keeps a compacted
+    /// copy of the CLI's file and key order carries no meaning; bytes otherwise.
+    static func same(_ a: Data, _ b: Data) -> Bool {
+        if a == b { return true }
+        guard let x = try? JSONSerialization.jsonObject(with: a), let y = try? JSONSerialization.jsonObject(with: b) else { return false }
+        return (x as AnyObject).isEqual(y)
     }
 
     /// Lists vault item names by attributes only (no data, so no permission dialog) and merges
     /// them into the index. Items still stored under the app's previous name are moved over.
-    static func syncIndexWithKeychain() {
+    /// Returns each current item's modification date, for the payload cache.
+    static func syncIndexWithKeychain() -> [String: Date] {
         var names: [String] = []
+        var modified: [String: Date] = [:]
         for svc in [service, legacyService] {
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
@@ -373,27 +417,45 @@ enum Vault {
                     Keychain.delete(service: legacyService, account: name)
                     Log.line("vault.migrate \(name.prefix(6))… ok")
                 }
+            } else {
+                for item in items {
+                    if let name = item[kSecAttrAccount as String] as? String, let date = item[kSecAttrModificationDate as String] as? Date {
+                        modified[name] = date
+                    }
+                }
             }
             names += found
         }
         writeIndex(readIndex() + names)
+        return modified
     }
 
     /// Account names live in a small index file; the credential blobs live in the Keychain.
     static func list() -> [(Provider, String, Data)] {
-        syncIndexWithKeychain()
+        let modified = syncIndexWithKeychain()
         let names = readIndex()
-        Log.line("vault.list count=\(names.count)")
-        return names.compactMap { acct in
+        var reads = 0
+        let out: [(Provider, String, Data)] = names.compactMap { acct in
             guard let sep = acct.firstIndex(of: ":"),
-                  let provider = Provider(rawValue: String(acct[..<sep])),
-                  let data = Keychain.read(service: service, account: acct) else { return nil }
+                  let provider = Provider(rawValue: String(acct[..<sep])) else { return nil }
+            let date = modified[acct]
+            if let date, let hit = cache.withLock({ $0[acct] }), hit.modified == date {
+                return (provider, String(acct[acct.index(after: sep)...]), hit.payload)
+            }
+            reads += 1
+            let data = Keychain.read(service: service, account: acct)
+            guard let data else { cache.withLock { $0[acct] = nil }; return nil }
+            cache.withLock { $0[acct] = date.map { Cached(modified: $0, payload: data) } }
             return (provider, String(acct[acct.index(after: sep)...]), data)
         }
+        Log.line("vault.list count=\(names.count) read=\(reads)")
+        return out
     }
 
     static func save(_ provider: Provider, email: String, payload: Data) throws {
         let account = "\(provider.rawValue):\(email.lowercased())"
+        // Whatever the outcome, the next list reads this item afresh.
+        defer { cache.withLock { $0[account] = nil } }
         do {
             try Keychain.write(service: service, account: account, value: String(decoding: payload, as: UTF8.self))
             writeIndex(readIndex() + [account])
@@ -408,6 +470,7 @@ enum Vault {
     /// later sync cannot quietly resurrect it behind the user's back.
     static func delete(_ provider: Provider, email: String) throws {
         let account = "\(provider.rawValue):\(email.lowercased())"
+        defer { cache.withLock { $0[account] = nil } }
         guard Keychain.delete(service: service, account: account) else { throw AuthError.keychain("could not delete \(provider.rawValue) login") }
         writeIndex(readIndex().filter { $0 != account })
     }
@@ -508,7 +571,7 @@ enum JWT {
     }
 }
 
-/// Append-only diagnostics, status codes and counts only.
+/// Appended diagnostics, status codes and counts only.
 enum Log {
     static let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/VibeJuice/app.log")
     /// One serial queue: the caller (often the main actor) never waits on the file.
@@ -526,9 +589,35 @@ enum Log {
         let stamp = Date().formatted(.dateTime.hour().minute().second())
         let data = Data("\(stamp) \(text)\n".utf8)
         queue.async {
-            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(data); try? h.close() }
-            else { try? data.write(to: file) }
+            prepare()
+            if let h = try? FileHandle(forWritingTo: file) {
+                let size = h.seekToEndOfFile() + UInt64(data.count)
+                h.write(data); try? h.close()
+                if size > rotateBytes, rotate(file, over: rotateBytes) { CrashLog.reopen() }
+            } else { try? data.write(to: file) }
         }
+    }
+
+    /// Past this size the log moves to app.log.1, replacing the previous one, so the two stay
+    /// around 2 MB however long the app runs.
+    static let rotateBytes: UInt64 = 1_000_000
+
+    /// Rotates an oversized log left by the last run, once, before the first line and before
+    /// CrashLog opens the file.
+    private static let launched: Void = {
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        rotate(file, over: rotateBytes)
+    }()
+
+    static func prepare() { launched }
+
+    /// Moves `file` to `<file>.1` when it is larger than `limit`. Returns whether it moved.
+    @discardableResult
+    static func rotate(_ file: URL, over limit: UInt64) -> Bool {
+        let fm = FileManager.default
+        guard let size = (try? fm.attributesOfItem(atPath: file.path))?[.size] as? NSNumber, size.uint64Value > limit else { return false }
+        let old = file.appendingPathExtension("1")
+        try? fm.removeItem(at: old)
+        return (try? fm.moveItem(at: file, to: old)) != nil
     }
 }

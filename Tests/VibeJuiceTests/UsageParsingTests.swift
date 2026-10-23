@@ -163,3 +163,20 @@ private func json(_ text: String) -> [String: Any] {
         #expect((out["nested"] as? [String: Any])?["plan"] as? String == "max")
     }
 }
+
+@Suite struct RateLimitResponseTests {
+    @Test func retryAfterReadsSecondsOrHTTPDate() {
+        #expect(UsageError.retryAfter("120", now: now) == 120)
+        #expect(UsageError.retryAfter("Fri, 15 Jan 2027 08:02:00 GMT", now: now) == 120)
+        #expect(UsageError.retryAfter(nil, now: now) == nil)
+        #expect(UsageError.retryAfter("soon", now: now) == nil)
+    }
+
+    @Test func http429CarriesRetryAfterOtherCodesKeepTheirStatus() {
+        let limited = HTTPURLResponse(url: URL(string: "https://example.com")!, statusCode: 429, httpVersion: nil, headerFields: ["Retry-After": "90"])
+        guard case .rateLimited(let after) = UsageError.from(429, Data(), limited, now: now) else { Issue.record("429 not rate limited"); return }
+        #expect(after == 90)
+        guard case .http(500, _) = UsageError.from(500, Data("oops".utf8), nil, now: now) else { Issue.record("500 not kept"); return }
+        #expect(Log.describe(UsageError.rateLimited(retryAfter: nil)) == "http 429")
+    }
+}

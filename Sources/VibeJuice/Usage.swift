@@ -10,14 +10,34 @@ enum UsageError: Error, CustomStringConvertible {
     case unauthorized
     /// Status code plus the first bytes of the body, for the debugger; the body never reaches the log.
     case http(Int, String)
+    /// HTTP 429, with the server's Retry-After in seconds when it sent one.
+    case rateLimited(retryAfter: TimeInterval?)
     case badPayload
 
     var description: String {
         switch self {
         case .unauthorized: "unauthorized"
         case .http(let code, _): "http \(code)"
+        case .rateLimited: "http 429"
         case .badPayload: "bad payload"
         }
+    }
+
+    /// The error for a response outside 2xx.
+    static func from(_ code: Int, _ data: Data, _ resp: URLResponse?, now: Date = Date()) -> UsageError {
+        if code == 429 { return .rateLimited(retryAfter: retryAfter((resp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After"), now: now)) }
+        return .http(code, String(decoding: data.prefix(200), as: UTF8.self))
+    }
+
+    /// Retry-After is either delay seconds or an HTTP date.
+    static func retryAfter(_ value: String?, now: Date) -> TimeInterval? {
+        guard let v = value?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return nil }
+        if let seconds = TimeInterval(v) { return max(0, seconds) }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return f.date(from: v).map { max(0, $0.timeIntervalSince(now)) }
     }
 }
 
@@ -49,7 +69,7 @@ enum UsageClient {
         let (data, resp) = try await session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 || code == 403 { throw UsageError.unauthorized }
-        guard (200..<300).contains(code) else { throw UsageError.http(code, String(decoding: data.prefix(200), as: UTF8.self)) }
+        guard (200..<300).contains(code) else { throw UsageError.from(code, data, resp) }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw UsageError.badPayload }
         DebugLog.shape("claude-usage", root)
         let windows = parseClaude(root)
@@ -117,7 +137,7 @@ enum UsageClient {
         let (data, resp) = try await session.data(for: codexRequest("wham/usage", creds))
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 || code == 403 { throw UsageError.unauthorized }
-        guard (200..<300).contains(code) else { throw UsageError.http(code, String(decoding: data.prefix(200), as: UTF8.self)) }
+        guard (200..<300).contains(code) else { throw UsageError.from(code, data, resp) }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw UsageError.badPayload }
         DebugLog.shape("codex-usage", root)
         var result = parseCodex(root, fallbackPlan: creds.planLabel)
@@ -214,7 +234,7 @@ enum UsageClient {
         let (data, resp) = try await session.data(for: grokRequest("billing?format=credits", creds))
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 || code == 403 { throw UsageError.unauthorized }
-        guard (200..<300).contains(code) else { throw UsageError.http(code, String(decoding: data.prefix(200), as: UTF8.self)) }
+        guard (200..<300).contains(code) else { throw UsageError.from(code, data, resp) }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw UsageError.badPayload }
         DebugLog.shape("grok-billing", root)
         var result = parseGrok(root)
@@ -272,7 +292,7 @@ enum UsageClient {
         let (data, resp) = try await session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 || code == 403 { throw UsageError.unauthorized }
-        guard (200..<300).contains(code) else { throw UsageError.http(code, String(decoding: data.prefix(200), as: UTF8.self)) }
+        guard (200..<300).contains(code) else { throw UsageError.from(code, data, resp) }
     }
 }
 
@@ -281,11 +301,14 @@ enum UsageClient {
 enum DebugLog {
     static func redactedForTest(_ v: Any) -> Any { redact(v) }
 
+    /// Written only when the shape differs from the file's, not on every fetch.
     static func shape(_ name: String, _ json: Any) {
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/VibeJuice")
+        let file = dir.appendingPathComponent("\(name).json")
+        guard let data = try? JSONSerialization.data(withJSONObject: redact(json), options: [.prettyPrinted, .sortedKeys]),
+              data != (try? Data(contentsOf: file)) else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard let data = try? JSONSerialization.data(withJSONObject: redact(json), options: [.prettyPrinted, .sortedKeys]) else { return }
-        try? data.write(to: dir.appendingPathComponent("\(name).json"), options: .atomic)
+        try? data.write(to: file, options: .atomic)
     }
 
     static func redact(_ v: Any) -> Any {

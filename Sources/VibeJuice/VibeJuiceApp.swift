@@ -159,11 +159,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// reports, so this is the only trace a crash leaves. Only async-signal-safe calls: the file is
 /// opened up front and the handler uses write(2) and backtrace_symbols_fd, never Foundation.
 enum CrashLog {
-    // Written once at install, read only inside the signal handler.
+    // Written at install and after a log rotation, read only inside the signal handler.
     nonisolated(unsafe) private static var fd: Int32 = -1
     nonisolated(unsafe) private static let frames = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 64)
 
     static func install() {
+        // An oversized log from the last run is rotated first, so the crash trace lands in the new one.
+        Log.prepare()
         fd = open(Log.file.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
         for sig in [SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGFPE] {
             signal(sig) { s in
@@ -177,5 +179,13 @@ enum CrashLog {
                 raise(s)
             }
         }
+    }
+
+    /// Follows `Log` to the fresh file after a rotation; the old descriptor points at app.log.1.
+    static func reopen() {
+        guard fd >= 0 else { return }
+        let old = fd
+        fd = open(Log.file.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+        close(old)
     }
 }
