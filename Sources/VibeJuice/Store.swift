@@ -30,8 +30,12 @@ final class Store {
 
     struct Update { let version: String; let url: URL }
 
-    /// Automatic refreshes leave an account alone this long after its last fetch.
-    nonisolated static let minRefreshAge: TimeInterval = 60
+    /// Automatic refreshes leave an active account alone this long after its last fetch, so
+    /// it is fetched on every 5-minute pass.
+    nonisolated static let activeRefreshAge: TimeInterval = 60
+    /// Nobody is spending an inactive account's quota from this Mac, so every half hour will do.
+    /// Just under 30 minutes, so the sixth 5-minute pass catches it rather than the seventh.
+    nonisolated static let inactiveRefreshAge: TimeInterval = 29 * 60
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var updateTimer: Timer?
@@ -77,8 +81,8 @@ final class Store {
 
     /// Captures whatever is signed in right now into the vault, lists the vault, then refreshes
     /// usage. Safe to call at any time; overlapping calls are harmless. Automatic reloads
-    /// (launch, timer, wake) skip accounts refreshed within the last minute; a user's click
-    /// (`force`) always fetches, so the usage endpoints are not hammered.
+    /// (launch, timer, wake) fetch only the accounts that are `due`; a user's click (`force`)
+    /// always fetches everything.
     func reload(force: Bool = false) {
         Task { await rescan(); await refreshAll(force: force) }
     }
@@ -128,9 +132,23 @@ final class Store {
 
     @ObservationIgnored private var pendingPass: Bool?
 
-    /// Accounts an automatic pass fetches: everything not refreshed within `minRefreshAge`.
+    /// Accounts a pass fetches. A forced pass takes all of them; an automatic one skips accounts
+    /// backing off a 429 and those fetched more recently than their refresh age.
     nonisolated static func due(_ accounts: [Account], force: Bool, now: Date = Date()) -> [Account] {
-        accounts.filter { force || ($0.updatedAt.map { now.timeIntervalSince($0) } ?? .infinity) >= minRefreshAge }
+        if force { return accounts }
+        return accounts.filter { a in
+            if let until = a.rateLimitedUntil, until > now { return false }
+            let age = a.updatedAt.map { now.timeIntervalSince($0) } ?? .infinity
+            return age >= (a.isActive ? activeRefreshAge : inactiveRefreshAge)
+        }
+    }
+
+    /// How long automatic passes skip an account after its `strikes`-th 429 in a row: 10
+    /// minutes doubling up to 2 hours, or the server's Retry-After when longer (capped at 6 hours
+    /// so a bogus header cannot silence an account for days).
+    nonisolated static func rateLimitBackoff(strikes: Int, retryAfter: TimeInterval?) -> TimeInterval {
+        let doubling = min(600 * pow(2, Double(max(0, strikes - 1))), 7200)
+        return max(doubling, min(retryAfter ?? 0, 6 * 3600))
     }
 
     /// Posts the notifications that are due and records them so each goes out once.
@@ -172,13 +190,19 @@ final class Store {
                 if let p = r.plan { a.plan = p }
                 a.manualResets = r.manualResets
                 a.updatedAt = Date()
+                a.rateLimitedUntil = nil
+                a.rateLimitStrikes = 0
             case .failure(let e):
                 Log.line("refresh \(a.provider.rawValue) failed: \(Log.describe(e))")
                 if case UsageError.unauthorized = e { a.status = .expired }
-                else if case UsageError.http(429, _) = e {
-                    // Rate limited by the usage endpoint: keep the last good meters, they are
-                    // still true, and let the throttle space out the next attempt.
-                    if case .ok = a.status { a.updatedAt = Date() } else { a.status = .error("Rate limited, retrying later") }
+                else if case UsageError.rateLimited(let retryAfter) = e {
+                    // Keep the last good meters, they are still true, and back off: asking again
+                    // on the next pass only earns another 429.
+                    a.rateLimitStrikes += 1
+                    let wait = Store.rateLimitBackoff(strikes: a.rateLimitStrikes, retryAfter: retryAfter)
+                    a.rateLimitedUntil = Date().addingTimeInterval(wait)
+                    Log.line("refresh \(a.provider.rawValue) backs off \(Int(wait))s")
+                    if case .ok = a.status {} else { a.status = .error("Rate limited, retrying later") }
                 }
                 else if case UsageError.http(let code, _) = e { a.status = .error("HTTP \(code)") }
                 else { a.status = .error((e as? URLError)?.localizedDescription ?? "Request failed") }
