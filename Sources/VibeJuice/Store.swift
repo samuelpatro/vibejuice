@@ -43,6 +43,8 @@ final class Store {
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
+        // Neither needs to fire on the dot; tolerance lets macOS batch the wakeup with others.
+        timer?.tolerance = 30
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
@@ -50,6 +52,7 @@ final class Store {
         updateTimer = Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.checkForUpdate() }
         }
+        updateTimer?.tolerance = 3600
     }
 
     func accounts(for provider: Provider) -> [Account] {

@@ -389,11 +389,10 @@ struct IconCircle: View {
     }
 }
 
-/// Refresh control whose arrow spins while a refresh runs. TimelineView redraws every frame and
-/// the closure reads `store.refreshing` live each frame, so the spin stops the moment a refresh
-/// ends without needing the menu bar popover to re-render its tree, which it does not do reliably
-/// on state changes while open. A plain rotated symbol, not an AppKit ProgressView, which keeps
-/// animating on its own timer after the tree stops updating.
+/// Refresh control whose arrow spins while a refresh runs. The timeline only ticks during a
+/// refresh: left running it redraws at 30 fps forever, even with the popover closed, which kept
+/// the app at 10 to 20% CPU while idle. A plain rotated symbol, not an AppKit ProgressView, which
+/// keeps animating on its own timer after the tree stops updating.
 struct RefreshButton: View {
     @Environment(Store.self) private var store
     var size: CGFloat = 28
@@ -405,7 +404,7 @@ struct RefreshButton: View {
 
     var body: some View {
         // Under Reduce Motion the timeline pauses and the arrow just dims while a refresh runs.
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || !store.refreshing)) { context in
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: size * 0.42, weight: .medium))
                 .rotationEffect(.degrees(angle(at: context.date)))
