@@ -73,10 +73,23 @@ enum MenuBarIcon {
 
     /// One glass with stacked colored bands, one per provider (0…1 fill), then a purple bolt. A color
     /// image, not a template, so the outline is drawn in the menu bar's current label color.
-    static func image(levels: [(Provider, Double)], bolt: Bool) -> NSImage {
+    /// The label re-renders on every account change, several times per refresh pass. Handing back
+    /// the same image while the glass looks the same spares the status item a redraw each time.
+    @MainActor private static var cached: (key: String, image: NSImage)?
+
+    @MainActor static func image(levels: [(Provider, Double)], bolt: Bool) -> NSImage {
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // Whole percents: a finer change is below a pixel at this size.
+        let key = "\(dark) \(bolt) " + levels.map { "\($0.0.rawValue)=\(Int(($0.1 * 100).rounded()))" }.joined(separator: ",")
+        if let cached, cached.key == key { return cached.image }
+        let img = draw(levels: levels, bolt: bolt, dark: dark)
+        cached = (key, img)
+        return img
+    }
+
+    private static func draw(levels: [(Provider, Double)], bolt: Bool, dark: Bool) -> NSImage {
         let gw: CGFloat = 12, gh: CGFloat = 13, inset: CGFloat = 1.5
         let width = inset * 2 + gw + (bolt ? 12 : 0)
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let ink = dark ? NSColor.white : NSColor.black
         let img = NSImage(size: NSSize(width: width, height: 18), flipped: false) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
