@@ -71,12 +71,13 @@ Click a row to switch. Running Claude Code sessions pick up the new account on t
 - **Codex**: the weekly limit, the plan (Pro 5x, Pro 20x, Plus, Team), the renewal date, and how many manual resets remain. The login is read from `auth.json`, or from the Keychain when `cli_auth_credentials_store` is `keyring` or `auto` in `~/.codex/config.toml`. In that case macOS may ask once whether `security` may read the "Codex Auth" item; choose Always Allow.
 - **Grok**: the weekly (or monthly) limit and the reset time that Grok Build's `/usage` prints, plus the subscription tier (SuperGrok, X Premium). Same proxy calls as the CLI, which is open source.
 - Tokens are refreshed by the CLIs, never by VibeJuice. When a Claude account's token has expired, VibeJuice runs one minimal headless Claude Code request as that account in a throwaway config directory, so Claude Code renews the token itself, then reads the result back into the vault and, for the active account, into Claude Code's own login slot. If the saved login can no longer be renewed (the refresh token was rejected, or Claude Code cleared its login after a failed refresh of its own), the row says so and offers Sign in, and VibeJuice stops retrying it. This costs one tiny Haiku message from that account. Right-click a row for "Refresh token" to trigger it by hand. Codex and Grok tokens still refresh only when their CLI runs as that account.
+- Usage is fetched every 5 minutes for the active account and about every 30 minutes for the others, on launch and wake too. If the usage endpoint rate-limits an account, that account is skipped for 10 minutes, doubling on each repeat up to 2 hours, or for the `Retry-After` the server sends when that is longer. Right-click a row to refresh it now regardless.
 
 ## Development
 
 - `swift test` runs the unit tests: quota math, alert rules, usage payload parsing, credential parsing, session and terminal helpers. Everything that touches the Keychain, files, processes or the network stays out of them.
 - Module map in [docs/architecture.md](docs/architecture.md).
-- `~/Library/Logs/VibeJuice/app.log` records load steps with status codes only.
-- `~/Library/Logs/VibeJuice/*-usage.json` holds the shape of provider responses, keys and numbers, no tokens.
+- `~/Library/Logs/VibeJuice/app.log` records load steps with status codes only. Past 1 MB it moves to `app.log.1`, replacing the previous one.
+- `~/Library/Logs/VibeJuice/*-usage.json` holds the shape of provider responses, keys and numbers, no tokens. A file is rewritten only when its shape changes.
 - `open --env VIBEJUICE_DEBUG_WINDOW=1 build/VibeJuice.app` also shows the popover as a normal window.
 - `scripts/make-icon.swift` draws the icon; `prototype-dashboard.html` is the original design prototype.
