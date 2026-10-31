@@ -73,20 +73,21 @@ enum UsageClient {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw UsageError.badPayload }
         DebugLog.shape("claude-usage", root)
         let windows = parseClaude(root)
-        guard !windows.isEmpty else { throw UsageError.badPayload }
+        // A plan with every limit switched off is a valid answer, not a broken payload.
+        guard !windows.isEmpty || root["limits"] is [[String: Any]] else { throw UsageError.badPayload }
         return UsageResult(windows: windows, plan: creds.planLabel, manualResets: nil)
     }
 
     /// Windows from the /api/oauth/usage body. Pure, so the schemas can be tested with fixtures.
     static func parseClaude(_ root: [String: Any]) -> [QuotaWindow] {
-        var windows: [QuotaWindow] = []
-
         // Current schema: a `limits` array, one entry per window, with the model-scoped week
         // carrying its model's display name. This is what Claude Code's /usage renders.
-        if let limits = root["limits"] as? [[String: Any]], !limits.isEmpty {
+        // `is_active: false` marks a limit the plan doesn't have (no session limit on Ultra,
+        // no weekly limit on Team seats), so it's skipped.
+        if let limits = root["limits"] as? [[String: Any]] {
             var session: QuotaWindow?, scoped: [QuotaWindow] = [], all: QuotaWindow?
             for (i, l) in limits.enumerated() {
-                guard let pct = l["percent"] as? Double else { continue }
+                guard let pct = l["percent"] as? Double, l["is_active"] as? Bool != false else { continue }
                 let kind = (l["kind"] as? String) ?? ""
                 let reset = parseDate(l["resets_at"])
                 switch kind {
@@ -101,11 +102,16 @@ enum UsageClient {
                     scoped.append(QuotaWindow(id: "scoped-\(i)", label: "Week, \(name)", usedPercent: pct, resetsAt: reset, secondary: false))
                 }
             }
-            windows = [session].compactMap { $0 } + scoped + [all].compactMap { $0 }
+            // Without a session limit the all-models week is the main meter, so don't dim it.
+            if session == nil, let a = all {
+                all = QuotaWindow(id: a.id, label: a.label, usedPercent: a.usedPercent, resetsAt: a.resetsAt, secondary: false)
+            }
+            return [session].compactMap { $0 } + scoped + [all].compactMap { $0 }
         }
 
         // Older schema fallback.
-        if windows.isEmpty {
+        var windows: [QuotaWindow] = []
+        do {
             let order: [(String, String, Bool)] = [
                 ("five_hour", "Session", false),
                 ("seven_day_opus", "Week, Opus", false),

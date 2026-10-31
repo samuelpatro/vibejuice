@@ -81,6 +81,20 @@ private func jwt(_ claims: [String: Any]) -> String {
         #expect(label(tier: "claude_max_5x", sub: "max") == "Max 5x")
         #expect(label(tier: nil, sub: "pro") == "Pro")
         #expect(label(tier: nil, sub: nil) == nil)
+        #expect(label(tier: "default_claude_max_5x", sub: "team") == "Team")
+    }
+
+    @Test func claudePlanPrefersDisplayName() throws {
+        func label(_ account: [String: Any]) -> String? {
+            let payload = try! JSONSerialization.data(withJSONObject: [
+                "claudeAiOauth": ["accessToken": "t", "subscriptionType": "max", "rateLimitTier": "default_claude_max_20x"],
+                "oauthAccount": account,
+            ])
+            return ClaudeCredentials(payload: payload)?.planLabel
+        }
+        #expect(label(["planDisplayName": "Ultra", "organizationType": "claude_max"]) == "Ultra")
+        #expect(label(["planDisplayName": "", "organizationType": "claude_max"]) == "Max 20x")
+        #expect(label(["organizationType": "claude_team"]) == "Team")
     }
 
     @Test func grokReadsFirstEntryWithAKey() throws {

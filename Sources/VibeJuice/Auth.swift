@@ -10,6 +10,10 @@ struct ClaudeCredentials {
     let expiresAt: Date?
     let subscriptionType: String?
     let rateLimitTier: String?
+    /// Claude's current name for the plan ("Ultra"); the rate tier keeps the old "max_20x".
+    let planDisplayName: String?
+    /// "claude_team", "claude_max", …
+    let organizationType: String?
 
     /// payload = {"claudeAiOauth": {...}, "oauthAccount": {...}}
     init?(payload: Data) {
@@ -20,9 +24,15 @@ struct ClaudeCredentials {
         expiresAt = (oauth["expiresAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
         subscriptionType = oauth["subscriptionType"] as? String
         rateLimitTier = oauth["rateLimitTier"] as? String
+        let account = root["oauthAccount"] as? [String: Any]
+        planDisplayName = (account?["planDisplayName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        organizationType = account?["organizationType"] as? String
     }
 
     var planLabel: String? {
+        if let planDisplayName { return planDisplayName }
+        // Team seats carry a Max-style rate tier but aren't Max plans.
+        if organizationType == "claude_team" || subscriptionType?.lowercased() == "team" { return "Team" }
         let tier = (rateLimitTier ?? "").lowercased()
         let sub = (subscriptionType ?? "").lowercased()
         if tier.contains("20x") { return "Max 20x" }
