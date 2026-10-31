@@ -25,6 +25,34 @@ private func json(_ text: String) -> [String: Any] {
         #expect(w[0].resetsAt == ISO8601DateFormatter().date(from: "2027-01-05T03:00:00Z"))
     }
 
+    @Test func inactiveLimitsAreSkipped() {
+        // Ultra: no session limit, so the all-models week becomes the main meter.
+        let ultra = UsageClient.parseClaude(json("""
+        {"five_hour": {"utilization": 0},
+         "limits": [
+          {"kind": "session", "percent": 0, "is_active": false},
+          {"kind": "weekly_all", "percent": 6, "is_active": true},
+          {"kind": "weekly_scoped", "percent": 0, "is_active": false, "scope": {"model": {"display_name": "Fable"}}}
+        ]}
+        """))
+        #expect(ultra.map(\.id) == ["weekly_all"])
+        #expect(ultra.map(\.secondary) == [false])
+
+        // Team seat: session only.
+        let team = UsageClient.parseClaude(json("""
+        {"limits": [
+          {"kind": "session", "percent": 93, "is_active": true},
+          {"kind": "weekly_scoped", "percent": 5, "is_active": false}
+        ]}
+        """))
+        #expect(team.map(\.id) == ["session"])
+
+        // Every limit off: no meters, and no fallback to the legacy keys.
+        #expect(UsageClient.parseClaude(json("""
+        {"five_hour": {"utilization": 0}, "limits": [{"kind": "session", "percent": 0, "is_active": false}]}
+        """)).isEmpty)
+    }
+
     @Test func scopedWithoutDisplayNameFallsBackToKind() {
         let w = UsageClient.parseClaude(json("""
         {"limits": [{"kind": "weekly_scoped", "percent": 1}, {"kind": "something_else", "percent": 2}]}
