@@ -62,12 +62,12 @@ cask "vibejuice" do
 
   depends_on macos: :tahoe
 
-  # Unsigned build: drop the quarantine flag before install so Gatekeeper does not block it.
-  preflight do
-    system_command "/usr/bin/xattr", args: ["-cr", "#{staged_path}/VibeJuice.app"]
-  end
-
   app "VibeJuice.app"
+
+  # Unsigned build: drop the quarantine flag before install so Gatekeeper does not block it.
+  preflight_steps do
+    run "/usr/bin/xattr", args: ["-cr", "{{staged_path}}/VibeJuice.app"]
+  end
 
   zap trash: [
     "~/Library/Application Support/VibeJuice",
