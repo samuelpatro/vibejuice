@@ -19,6 +19,10 @@ enum Provider: String, CaseIterable, Identifiable, Codable {
     /// its own (Claude Code 2.1.261: the change check clears the cached credentials when the
     /// Keychain item differs). Codex refuses to adopt a different account mid-session; Grok unknown.
     var adoptsLoginLive: Bool { self == .claude }
+    /// Claude Code's own picker for limit resets (5-hour, weekly, full, Fable): it lists the ones
+    /// the signed-in login holds, asks which to use and claims it (Claude Code 2.1.322). The
+    /// usage endpoint lists those resets only to Claude Code, so the app hands over to it.
+    var limitResetCommand: String? { self == .claude ? "claude /limit-reset" : nil }
     /// Reopens the most recent session in the current folder after a restart.
     var resumeCommand: String {
         switch self { case .claude: "claude --continue"; case .codex: "codex resume --last"; case .grok: "grok --continue" }

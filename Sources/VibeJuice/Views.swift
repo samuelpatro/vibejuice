@@ -152,6 +152,10 @@ struct ProviderSection: View {
         if a.provider == .codex, let n = a.manualResets, n > 0 {
             Button("Use a manual reset (\(n) left)") { Task { await store.consumeReset(a) } }
         }
+        if a.isActive, a.provider.limitResetCommand != nil {
+            Button("Use a limit reset…") { store.useLimitReset(a) }
+                .help("Opens \(a.provider.tool) with /limit-reset, which lists your 5-hour, weekly, full and Fable resets.")
+        }
         Divider()
         Button("Forget account") { store.forget(a) }.disabled(a.isActive)
     }
@@ -224,6 +228,12 @@ struct AccountRow: View {
     private var trailing: some View {
         if case .ok = account.status {
             let left = Int((account.headroom ?? 0).rounded())
+            // Most limit resets only work at a limit, so the shortcut appears when one is hit.
+            if account.spent, account.isActive, account.provider.limitResetCommand != nil {
+                Pill(text: "Use reset")
+                    .tapTarget("Use a limit reset in \(account.provider.tool)") { store.useLimitReset(account) }
+                    .help("Opens \(account.provider.tool) with /limit-reset to refill this limit if you have a reset.")
+            }
             // Just the headline number: each meter below carries its own percent and reset.
             Text("\(left)% left")
                 .font(.callout.weight(.semibold)).monospacedDigit()
