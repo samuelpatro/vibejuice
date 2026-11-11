@@ -352,6 +352,12 @@ final class Store {
         }
     }
 
+    /// Resets apply to the login the CLI is using, so only the active account offers one.
+    func useLimitReset(_ account: Account) {
+        guard account.isActive, let command = account.provider.limitResetCommand else { return }
+        Task.detached { Terminal.run(command, cwd: NSHomeDirectory()) }
+    }
+
     // MARK: Adding
 
     /// Snapshot the current login, then let the CLI's own sign-in replace it.
