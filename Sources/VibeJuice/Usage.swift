@@ -73,7 +73,7 @@ enum UsageClient {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw UsageError.badPayload }
         DebugLog.shape("claude-usage", root)
         let windows = parseClaude(root)
-        // A plan with every limit switched off is a valid answer, not a broken payload.
+        // A plan with no limits at all (an empty `limits`) is a valid answer, not a broken payload.
         guard !windows.isEmpty || root["limits"] is [[String: Any]] else { throw UsageError.badPayload }
         return UsageResult(windows: windows, plan: creds.planLabel, manualResets: nil)
     }
@@ -82,12 +82,12 @@ enum UsageClient {
     static func parseClaude(_ root: [String: Any]) -> [QuotaWindow] {
         // Current schema: a `limits` array, one entry per window, with the model-scoped week
         // carrying its model's display name. This is what Claude Code's /usage renders.
-        // `is_active: false` marks a limit the plan doesn't have (no session limit on Ultra,
-        // no weekly limit on Team seats), so it's skipped.
+        // Every row is a limit that applies; a plan without one gets no row. `is_active` is only
+        // the server's headline pick (the row a single-value indicator shows), never a filter.
         if let limits = root["limits"] as? [[String: Any]] {
             var session: QuotaWindow?, scoped: [QuotaWindow] = [], all: QuotaWindow?
             for (i, l) in limits.enumerated() {
-                guard let pct = l["percent"] as? Double, l["is_active"] as? Bool != false else { continue }
+                guard let pct = l["percent"] as? Double else { continue }
                 let kind = (l["kind"] as? String) ?? ""
                 let reset = parseDate(l["resets_at"])
                 switch kind {

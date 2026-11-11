@@ -25,31 +25,30 @@ private func json(_ text: String) -> [String: Any] {
         #expect(w[0].resetsAt == ISO8601DateFormatter().date(from: "2027-01-05T03:00:00Z"))
     }
 
-    @Test func inactiveLimitsAreSkipped() {
-        // Ultra: no session limit, so the all-models week becomes the main meter.
-        let ultra = UsageClient.parseClaude(json("""
-        {"five_hour": {"utilization": 0},
-         "limits": [
-          {"kind": "session", "percent": 0, "is_active": false},
-          {"kind": "weekly_all", "percent": 6, "is_active": true},
-          {"kind": "weekly_scoped", "percent": 0, "is_active": false, "scope": {"model": {"display_name": "Fable"}}}
-        ]}
-        """))
-        #expect(ultra.map(\.id) == ["weekly_all"])
-        #expect(ultra.map(\.secondary) == [false])
-
-        // Team seat: session only.
-        let team = UsageClient.parseClaude(json("""
+    @Test func everyLimitRowIsShownWhateverTheHeadlinePick() {
+        // Live shape: only the fullest row carries is_active, the others still apply.
+        let w = UsageClient.parseClaude(json("""
         {"limits": [
-          {"kind": "session", "percent": 93, "is_active": true},
-          {"kind": "weekly_scoped", "percent": 5, "is_active": false}
+          {"kind": "session", "percent": 0, "is_active": false},
+          {"kind": "weekly_all", "percent": 25, "is_active": false},
+          {"kind": "weekly_scoped", "percent": 32, "is_active": true, "scope": {"model": {"display_name": "Fable"}}}
         ]}
         """))
-        #expect(team.map(\.id) == ["session"])
+        #expect(w.map(\.label) == ["Session", "Week, Fable", "Week, all models"])
+        #expect(w.map(\.secondary) == [false, false, true])
+    }
 
-        // Every limit off: no meters, and no fallback to the legacy keys.
+    @Test func withoutASessionRowTheWeekIsTheMainMeter() {
+        let w = UsageClient.parseClaude(json("""
+        {"limits": [{"kind": "weekly_all", "percent": 6, "is_active": true}]}
+        """))
+        #expect(w.map(\.id) == ["weekly_all"])
+        #expect(w.map(\.secondary) == [false])
+    }
+
+    @Test func emptyLimitsMeansNoMetersNotTheLegacyKeys() {
         #expect(UsageClient.parseClaude(json("""
-        {"five_hour": {"utilization": 0}, "limits": [{"kind": "session", "percent": 0, "is_active": false}]}
+        {"five_hour": {"utilization": 0}, "limits": []}
         """)).isEmpty)
     }
 
